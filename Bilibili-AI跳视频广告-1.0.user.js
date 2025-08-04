@@ -483,7 +483,7 @@
                 if (!aiResponse) throw new Error('AI 返回数据格式异常');
                 log("AI 返回数据", aiResponse)
 
-                // 5. 提取并存储时间戳（你的核心逻辑）
+                // 提取并存储时间戳
                 const dataTimestamp = extractTimestampFromAiResponse(aiResponse);
                 if (dataTimestamp) {
                     state.adTime = dataTimestamp;
@@ -893,80 +893,6 @@ box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 
             return row;
         }
-
-        /*/ 起始行
-        const startTimeRow = document.createElement('div');
-        startTimeRow.style.cssText = 'display: flex; align-items: center; margin-bottom: 10px;';
-
-        const startTimeLabel = document.createElement('label');
-        startTimeLabel.textContent = '起始：';
-        startTimeLabel.style.cssText = 'width: 50px; text-align: right; margin-right: 10px; margin-left: 50px;';
-        startTimeRow.appendChild(startTimeLabel);
-
-        const startTimeWrapper = document.createElement('div');
-        startTimeWrapper.style.cssText = 'position: relative; flex: 0.8; max-width: 160px;';
-
-        const startTimeInput = document.createElement('input');
-        startTimeInput.type = 'text';
-        startTimeInput.id = 'kimiStartTime';
-        startTimeInput.placeholder = '请输入时间（格式 00:00）';
-        startTimeInput.style.cssText = 'width: 100%; padding-right: 100px;';
-        startTimeWrapper.appendChild(startTimeInput);
-        startTimeRow.appendChild(startTimeWrapper);
-        dataTimestamptampContainer.appendChild(startTimeRow);
-
-        // 结束行
-        const endTimeRow = document.createElement('div');
-        endTimeRow.style.cssText = 'display: flex; align-items: center; margin-bottom: 10px;';
-
-        const endTimeLabel = document.createElement('label');
-        endTimeLabel.textContent = '结束：';
-        endTimeLabel.style.cssText = 'width: 50px; text-align: right; margin-right: 10px; margin-left: 50px;';
-        endTimeRow.appendChild(endTimeLabel);
-
-        const endTimeWrapper = document.createElement('div');
-        endTimeWrapper.style.cssText = 'position: relative; flex: 0.8; max-width: 160px;';
-
-        const endTimeInput = document.createElement('input');
-        endTimeInput.type = 'text';
-        endTimeInput.id = 'kimiEndTime';
-        endTimeInput.placeholder = '请输入时间（格式 00:00）';
-        endTimeInput.style.cssText = 'width: 100%; padding-right: 100px;';
-        endTimeWrapper.appendChild(endTimeInput);
-        endTimeRow.appendChild(endTimeWrapper);
-        dataTimestamptampContainer.appendChild(endTimeRow);
-
-        // 插入填充值逻辑（只读提示）
-        const data = JSON.parse(localStorage.getItem(bvNumber) || '{}');
-        if (
-            data.dataTimestamp &&
-            typeof data.dataTimestamp.start === 'string' &&
-            typeof data.dataTimestamp.end === 'string'
-        ) {
-            startTimeInput.value = data.dataTimestamp.start;
-            endTimeInput.value = data.dataTimestamp.end;
-
-            const makeHint = () => {
-                const span = document.createElement('span');
-                span.textContent = '(读取自本地存储)';
-                span.style.cssText = `
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 12px;
-            color: gray;
-            pointer-events: none;
-            opacity: 0.75;
-            white-space: nowrap;
-        `;
-                return span;
-            };
-
-            startTimeWrapper.appendChild(makeHint());
-            endTimeWrapper.appendChild(makeHint());
-        }
-*/
 
         // 保存按钮
         const saveTimestampButton = document.createElement('button');
