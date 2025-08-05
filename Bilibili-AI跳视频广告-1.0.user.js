@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili-AI跳视频广告
 // @namespace    SkipBiliVideoAdByAI
-// @version      1.0
+// @version      1.01
 // @description  通过检测评论区置顶广告，点击AI小助手，提取字幕，发送给聊天AI获取广告时间戳，自动跳过广告时间段
 // @author       chemhunter
 // @match        https://www.bilibili.com/video/*
@@ -17,15 +17,16 @@
         'taobao.com','tb.cn', 'jd.com', 'pinduoduo.com',
         'mall.bilibili.com', 'gaoneng.bilibili.com',
         'yangkeduo.com', 'zhuanzhuan.com', 'goofish.com',
-        'firegz.com', '52haoka.com','aiyo-aiyo.com'
+        'firegz.com', '52haoka.com','aiyo-aiyo.com', 'bilibili.com/cheese/'
     ];
 
     const keywordList = [
         '拼多多', '淘宝', '京东', '天猫', '手淘', '旗舰店','运费','返现', '甲方', '催更', '双11', '双12','双十一','618','回购',                        //购物平台
         '特价','下单','礼包','补贴','领券','优惠','折扣','福利','评论区', '置顶链接','蓝链','退款','保价','限时','免费','专属',                     //商家话术
-        '品牌方', '他们家','赞助', '溪木源', '海力生', '萌牙家', '妙界', '神气小鹿', 'DAWEI', '温眠', '友望', '转转','礼盒',                      //品牌商家
-        '冰被','工学椅','润眼','护肝','护颈','颈椎','护眼','护枕','肩颈‘,’按摩','冲牙','牙刷','流量卡','肯德基','洗地机','鱼油','氨糖',    //产品功能
-        '产品','成分','配比','配方','精粹','精华', '养护','美白','牙渍','菌斑','久坐','疲劳','白茶','好价','降价','保养','口碑','控油',
+        '品牌方', '他们家','赞助', '溪木源', '海力生', '萌牙家', '妙界', '神气小鹿', 'DAWEI', '温眠', '友望', '转转','礼盒',                       //品牌商家
+        '冰被','工学椅','润眼','护肝','护颈','颈椎','护眼','护枕','肩颈‘,’按摩','冲牙','牙刷','肯德基','洗地机','鱼油','氨糖',                      //产品功能
+        '产品','成分','配比','配方','精粹','精华', '美白','牙渍','菌斑','久坐','疲劳','白茶','好价','降价','保养','控油',
+        '质感','科技感','口碑','热销','自研','养护','流量','送礼','放心冲','大额',
     ];
 
     // 定义默认状态
@@ -35,8 +36,8 @@
         hasExtractedSubtitles: false,
         adTime: null,
         adSkipBound: null,
+        lastSkipTime: 0,
         observer: null,
-        hasHandledAd: false, // 新增：标记是否已处理广告
         commentText:"",
     };
 
@@ -49,50 +50,25 @@
     function handleTimeUpdate(evt) {
         // 直接拿到绑定的 video
         const video = evt.target;
+        const duration = video.duration;
+        const currentTime = video.currentTime
         if (!state.adTime) {
             video.removeEventListener('timeupdate', handleTimeUpdate);
         } else {
-            const start = timeToSeconds(state.adTime.start);
-            const end = timeToSeconds(state.adTime.end);
-            if (video.currentTime >= start && video.currentTime <= end) {
+            let start = timeToSeconds(state.adTime.start);
+            let end = timeToSeconds(state.adTime.end);
+            const now = Date.now();
+            if (now - state.lastSkipTime < 1000) return;
+            if (currentTime >= start && currentTime <= end) {
+                if (duration - end <=5) {
+                    end = duration
+                }
                 log(`跳过广告 ${state.adTime.start} – ${state.adTime.end}`);
                 showJumpNotice(end)
                 video.currentTime = end;
+                state.lastSkipTime = now;
             }
         }
-    }
-
-    function showJumpNotice(ts) {
-        const container = document.querySelector('.bpx-player-video-wrap');
-        if (!container) return;
-        const box = document.createElement('div');
-        box.innerText = 'AI跳过广告 ⏩ ' + formatTime(ts);
-        Object.assign(box.style, {
-            position: 'absolute',
-            bottom: '-20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '6px 12px',
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            color: '#fff',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            borderRadius: '8px',
-            zIndex: '9999',
-            pointerEvents: 'none',
-            opacity: '0',
-            transition: 'opacity 0.3s ease'
-        });
-
-        container.style.position = 'relative';
-        container.appendChild(box);
-        requestAnimationFrame(() => {
-            box.style.opacity = '1';
-        });
-        setTimeout(() => {
-            box.style.opacity = '0';
-            setTimeout(() => box.remove(), 500);
-        }, 4000);
     }
 
     function setupAdSkipListener() {
@@ -105,14 +81,13 @@
     function handlePageChanges() {
         const bvNumber = getBVNumber();
         if (!bvNumber) return;
-        if (state.hasHandledAd && bvNumber === state.currentBV) return;
+        if (state.adSkipBound && bvNumber === state.currentBV) return;
 
         if (state.adTime) {
             if (!state.adSkipBound) {
                 log('使用本地广告时间戳', state.adTime);
                 setupAdSkipListener();
             }
-            state.hasHandledAd = true; // 标记为已处理
             return;
         }
 
@@ -122,7 +97,6 @@
             state.lastAdTimeCheck = Date.now();
             log('加载存储广告时间戳', state.adTime);
             setupAdSkipListener();
-            state.hasHandledAd = true; // 标记为已处理
             return;
         }
 
@@ -483,7 +457,7 @@
                 if (!aiResponse) throw new Error('AI 返回数据格式异常');
                 log("AI 返回数据", aiResponse)
 
-                // 提取并存储时间戳
+                // 5. 提取并存储时间戳（你的核心逻辑）
                 const dataTimestamp = extractTimestampFromAiResponse(aiResponse);
                 if (dataTimestamp) {
                     state.adTime = dataTimestamp;
@@ -582,6 +556,39 @@
 
     function log(...args) {
         console.log('[B站AI跳视频广告] ', ...args);
+    }
+
+    function showJumpNotice(ts) {
+        const container = document.querySelector('.bpx-player-video-wrap');
+        if (!container) return;
+        const box = document.createElement('div');
+        box.innerText = 'AI跳过广告 ⏩ ' + formatTime(ts);
+        Object.assign(box.style, {
+            position: 'absolute',
+            bottom: '-20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '6px 12px',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            color: '#fff',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            borderRadius: '8px',
+            zIndex: '9999',
+            pointerEvents: 'none',
+            opacity: '0',
+            transition: 'opacity 0.3s ease'
+        });
+
+        container.style.position = 'relative';
+        container.appendChild(box);
+        requestAnimationFrame(() => {
+            box.style.opacity = '1';
+        });
+        setTimeout(() => {
+            box.style.opacity = '0';
+            setTimeout(() => box.remove(), 500);
+        }, 4000);
     }
     //////////////////////////////////////////////////////////////////////
 
