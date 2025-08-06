@@ -1,6 +1,8 @@
 {
   "version": 2,
-  "routes": [
-    { "src": "/analyze", "dest": "/analyze.js" }
-  ]
+  "functions": {
+    "api/analyze.js": {
+      "runtime": "nodejs18.x"
+    }
+  }
 }
