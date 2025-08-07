@@ -34,7 +34,7 @@ module.exports = async function handler(req, res) {
 
   try {
     // 0. 检查是否已存在 5 条记录，避免重复调用 AI
-    const existingResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/ad_times?bv=eq.${bvNumber}`, {
+    const existingResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps?bv=eq.${bvNumber}`, {
       headers: {
         "apikey": process.env.SUPABASE_API_KEY,
         "Authorization": `Bearer ${process.env.SUPABASE_API_KEY}`
@@ -108,7 +108,7 @@ module.exports = async function handler(req, res) {
     const timestamp = timestampMatch;
 
     // 4. 写入 Supabase
-    const supaResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/ad_times`, {
+    const supaResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -120,8 +120,8 @@ module.exports = async function handler(req, res) {
         bv: bvNumber,
         timestamp_range: `${timestamp.start} - ${timestamp.end}`,
         source: 'cloudAIbyVercel',
-        user_id: user_Id,
-        ip: ip,
+        user_id,
+        ip,
       })
     });
 
