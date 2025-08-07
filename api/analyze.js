@@ -81,7 +81,7 @@ module.exports = async function handler(req, res) {
     
       const aiJson = await aiResp.json();
       aiResponseText = aiJson.choices?.[0]?.message?.content;
-      console.log("AI 返回：", aiResponseText);
+      console.log(bvNumber, "kimi 返回：", aiResponseText);
     } catch (err) {
       console.error("AI 请求异常：", err);
       return res.status(500).json({ error: 'AI 请求异常' });
