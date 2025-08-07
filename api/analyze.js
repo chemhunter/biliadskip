@@ -21,7 +21,11 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
-
+  
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
+               .split(',')[0]
+               .trim();
+  // 解析 body
   const { bvNumber, subtitles, user_Id } = req.body;
 
   if (!bvNumber || !Array.isArray(subtitles) || subtitles.length === 0) {
@@ -117,6 +121,7 @@ module.exports = async function handler(req, res) {
         timestamp_range: `${timestamp.start} - ${timestamp.end}`,
         source: 'cloudAIbyVercel',
         user_id: user_Id,
+        ip: ip,
       })
     });
 
