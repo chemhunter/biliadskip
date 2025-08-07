@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili-根据弹幕提醒跳过广告
 // @namespace    https://greasyfork.org/zh-CN/scripts/542541
-// @version      1.08
+// @version      1.09
 // @description  智能检测弹幕中广告提醒，提取时间戳并自动跳转播放器进度
 // @author       chemhunter
 // @match        https://www.bilibili.com/video/*
@@ -9,18 +9,71 @@
 // @grant        none
 // @run-at       document-end
 // @license      MIT
+// @require      https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js
 // @downloadURL https://update.greasyfork.org/scripts/542541/B%E7%AB%99%E6%A0%B9%E6%8D%AE%E5%BC%B9%E5%B9%95%E6%8F%90%E9%86%92%E8%B7%B3%E8%BF%87%E5%B9%BF%E5%91%8A.user.js
 // @updateURL https://update.greasyfork.org/scripts/542541/B%E7%AB%99%E6%A0%B9%E6%8D%AE%E5%BC%B9%E5%B9%95%E6%8F%90%E9%86%92%E8%B7%B3%E8%BF%87%E5%B9%BF%E5%91%8A.meta.js
+
 // ==/UserScript==
 
 (function () {
     'use strict';
 
+    // 引入 Supabase
+    const { createClient } = window.supabase;
+    const supabase = createClient(
+        'https://akoaopeqigjwpcksqdyf.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrb2FvcGVxaWdqd3Bja3NxZHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0MDgwMzEsImV4cCI6MjA2OTk4NDAzMX0.6JW6Gtescu5btG25b3en9w84ZbO40Z4fy3iUfWROIOM'
+    );
+
+    /*/ 查询云端
+    async function fetchCloudAdTime(bvNumber) {
+        const { data, error } = await supabase
+        .from('bili_ad_timestamps')
+        .select('timestamp_range')
+        .eq('bv', bvNumber)
+        .order('created_at', { ascending: false })
+        if (error || !data || data.length === 0) {
+            log("云端无记录", error?.message);
+            return null;
+        }
+        log('返回数据', data);
+        return data.map(entry => entry.timestamp_range);
+    }
+*/
+
+    // 上传云端
+    async function uploadAdTimeToCloud(bvNumber, timeStampStr, source) {
+        if (typeof timeStampStr === 'object' && timeStampStr !== null && timeStampStr.start && timeStampStr.end) {
+            timeStampStr = `${timeStampStr.start} - ${timeStampStr.end}`;
+        }
+
+        const { data: existingRecords, error: countError } = await supabase
+        .from('bili_ad_timestamps')
+        .select('bv', { count: 'exact', head: true }) // 只返回计数
+        .eq('bv', bvNumber);
+
+        if (countError) {
+            console.warn("查询云端记录数失败，继续尝试上传", countError.message);
+        } else if (existingRecords && existingRecords.length >= 5) {
+            log(`BV ${bvNumber} 云端已有 ${existingRecords.length} 条记录，跳过上传`);
+            return;
+        }
+
+        const { error } = await supabase.from('bili_ad_timestamps').insert([
+            { bv: bvNumber, timestamp_range: timeStampStr, source: source }
+        ]);
+
+        if (error) {
+            console.warn("上传云端广告时间戳失败", bvNumber, timeStampStr, error.message);
+        } else {
+            log("已上传广告时间戳至云端", bvNumber, timeStampStr);
+        }
+    }
+
     const timeRegexList = [
         { regex: /\b(?!\d[:：]0\b)(\d{1,2})[:：](\d{1,2})\b/, isFuzzy: false }, // 5:14
-        { regex: /(\d{1,2}|[一二三四五六七八九十]{1,3})分(\d{1,2}|[零一二三四五六七八九十]{1,3})秒/, isFuzzy: false },
-        { regex: /(\d{1,2})\.(\d{1,2})[郎朗]/, isFuzzy: false },
         { regex: /(\d{1,2}|[一二三四五六七八九十]{1,3})分(\d{1,2}|[零一二三四五六七八九十]{1,3})/, isFuzzy: false },
+        { regex: /(\d{1,2})\.(\d{1,2})[郎朗]/, isFuzzy: false },
         { regex: /(?<!\d)(\d{1,2})\.(\d{1,2})(?![\d郎秒分：wk+＋])/i, isFuzzy: true } // 模糊时间戳：纯数字 5.14
     ];
 
@@ -49,6 +102,7 @@
     const FUZZY_TIMEOUT = 10;
     const MIN_JUMP_INTERVAL = 10;
     const MIN_COUNT_TO_LOG = 2;
+    const bvUploaded = {};
     let lastJumpTime = 0;
 
     function extractTimestamps(text) {
@@ -127,7 +181,7 @@
         timestampCounter.clear();
     }
 
-    function handleJumpToAdTimestamps() {
+    async function handleJumpToAdTimestamps() {
         const now = Date.now();
         const video = document.querySelector('video');
         const current = video.currentTime;
@@ -139,7 +193,7 @@
             const timeSinceLastJump = now - lastJumpTime;
             const shouldJump =
                   count >= MIN_COUNT_TO_LOG && //真正广告时间戳
-                  ts - current > 0 && // 跳转时间戳在当前位置后面
+                  ts - current > 5 && // 跳转时间戳在当前位置后面至少5s
                   ts - current < 180 && // 跳转时间戳在当前位置后面3分钟内
                   ts < duration - 60 && //最后60s不跳
                   current > 30; // 前30s不跳
@@ -150,13 +204,26 @@
                 } else {
                     log(`广告时间戳 ${formatTime(ts)}，计数：${count}，1.5秒后跳转`);
                     video.currentTime = ts;
-                    console.log(`✅[跳转成功] 已从 ${formatTime(current)} 跳转至 ⏩${formatTime(ts)}`);
+                    log(`✅[跳转成功] 已从 ${formatTime(current)} 跳转至 ⏩${formatTime(ts)}`);
+                    const bv = getBVNumber();
+                    if (!bvUploaded[bv]) {
+                        const timeStampStr = `${formatTime(current)} - ${formatTime(ts)}`;
+                        uploadAdTimeToCloud(bv, timeStampStr, "Danmaku");
+                        bvUploaded[bv] = true;
+                    }
                     showJumpNotice(ts);
                     processedTimestamps.set(ts, now);
                     lastJumpTime = now;
                 }
             }
         }
+    }
+
+    function getBVNumber() {
+        const url = new URL(window.location.href);
+        const path = url.pathname;
+        const match = path.match(/\/video\/(BV\w+)/);
+        return match ? match[1] : null;
     }
 
     function formatTime(seconds) {
