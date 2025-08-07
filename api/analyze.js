@@ -7,6 +7,20 @@ function extractTimestamp(text) {
 }
 
 module.exports = async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+  // 处理 CORS 预检请求
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(204).end(); // 204 No Content
+  }
+
+  // 设置 CORS 响应头，允许跨域访问
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
