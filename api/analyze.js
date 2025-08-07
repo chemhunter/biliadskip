@@ -22,7 +22,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { bvNumber, subtitles } = req.body;
+  const { bvNumber, subtitles, user_Id } = req.body;
 
   if (!bvNumber || !Array.isArray(subtitles) || subtitles.length === 0) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -116,6 +116,7 @@ module.exports = async function handler(req, res) {
         bv: bvNumber,
         timestamp_range: `${timestamp.start} - ${timestamp.end}`,
         source: 'cloudAIbyVercel',
+        user_id: user_Id,
       })
     });
 
