@@ -115,6 +115,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         bv: bvNumber,
         timestamp_range: `${timestamp.start} - ${timestamp.end}`,
+        source: 'cloudAIbyVercel',
       })
     });
 
