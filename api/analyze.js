@@ -100,12 +100,10 @@ module.exports = async function handler(req, res) {
     }
     
     // 3. 提取时间戳
-    const timestampMatch = extractTimestamp(aiResponseText);
-    if (!timestampMatch) {
+    const timestamp_Obj = extractTimestamp(aiResponseText);
+    if (!timestamp_Obj) {
       return res.status(200).json({ success: false, error: "AI 返回中未检测到时间戳" });
     }
-
-    const timestamp = timestampMatch;
 
     // 4. 写入 Supabase
     const supaResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps`, {
@@ -118,7 +116,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         bv: bvNumber,
-        timestamp_range: `${timestamp.start} - ${timestamp.end}`,
+        timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
         source: 'cloudAIbyVercel',
         user_id,
         UP_id,
@@ -132,7 +130,7 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: 'Supabase 写入失败' });
     }
 
-    return res.status(200).json({ success: true, timestamp, raw: aiResponseText });
+    return res.status(200).json({ success: true, timestamp_Obj, raw: aiResponseText });
 
   } catch (err) {
     console.error("处理失败：", err);
