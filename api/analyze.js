@@ -26,7 +26,7 @@ module.exports = async function handler(req, res) {
                .split(',')[0]
                .trim();
   // 解析 body
-  const { bvNumber, subtitles, user_id } = req.body;
+  const { bvNumber, subtitles, user_id, UP_id} = req.body;
 
   if (!bvNumber || !Array.isArray(subtitles) || subtitles.length === 0) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -121,6 +121,7 @@ module.exports = async function handler(req, res) {
         timestamp_range: `${timestamp.start} - ${timestamp.end}`,
         source: 'cloudAIbyVercel',
         user_id,
+        UP_id,
         ip,
       })
     });
