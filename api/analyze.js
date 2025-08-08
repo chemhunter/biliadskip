@@ -6,6 +6,27 @@ function extractTimestamp(text) {
   return { start: match[1], end: match[2] };
 }
 
+//BV合法性验证
+function decodeBV(bv) {
+  const table = 'fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF';
+  const tr = {};
+  for (let i = 0; i < table.length; i++) {
+    tr[table[i]] = i;
+  }
+  const s = [11, 10, 3, 8, 4, 6];
+  const xor = 177451812;
+  const add = 8728348608;
+
+  if (!bv || bv.length !== 12 || !bv.startsWith('BV')) return null;
+  let r = 0;
+  for (let i = 0; i < 6; i++) {
+    const c = bv[s[i]];
+    if (!(c in tr)) return null;
+    r += tr[c] * 58 ** i;
+  }
+  return (r - add) ^ xor;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
   // 处理 CORS 预检请求
@@ -31,7 +52,11 @@ module.exports = async function handler(req, res) {
   if (!bvNumber || !Array.isArray(subtitles) || subtitles.length === 0) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
-
+  const avNumber = decodeBV(bvNumber);
+  if (avNumber === null) {
+    return res.status(400).json({ error: 'Invalid BV number' });
+  }
+  
   try {
     // 0. 检查是否已存在 5 条记录，避免重复调用 AI
     const existingResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps?bv=eq.${bvNumber}`, {
