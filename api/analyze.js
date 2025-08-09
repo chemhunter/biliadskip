@@ -27,6 +27,40 @@ function decodeBV(bv) {
   return (r - add) ^ xor;
 }
 
+// 查询现有调用次数
+async function checkAndUpdateBVCall(bvNumber) {
+  const queryUrl = `${SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json'
+  };
+
+  const resp = await fetch(queryUrl, { headers });
+  const data = await resp.json();
+
+  if (data.length > 0) {
+    const callTimes = data[0].call_times;
+    if (callTimes >= 2) {
+      return { allowed: false, reason: "该BV号已超出调用次数限制" };
+    }
+    // 更新调用次数
+    await fetch(queryUrl, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ call_times: callTimes + 1 })
+    });
+  } else {
+    // 插入新记录
+    await fetch(`${SUPABASE_URL}/rest/v1/bv_calls`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ bv: bvNumber, call_times: 1 })
+    });
+  }
+  return { allowed: true };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
   // 处理 CORS 预检请求
@@ -69,8 +103,13 @@ module.exports = async function handler(req, res) {
     if (existingData.length >= 5) {
       return res.status(200).json({ success: true, message: 'Already has enough records' });
     }
-
-    // 1. 构造 AI 请求内容（参考你的油猴脚本）
+    
+    //检查该BV历史调用AI次数
+    const check = await checkAndUpdateBVCall(bvNumber);
+    if (!check.allowed) {
+      return res.status(403).json({ error: check.reason });
+    }
+    // 1. 构造 AI 请求内容
     const requestData = {
       model: "moonshot-v1-auto",
       messages: [
