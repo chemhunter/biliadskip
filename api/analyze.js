@@ -1,18 +1,14 @@
 // api/analyze.js
-
+// ----------- 工具函数 -----------
 function extractTimestamp(text) {
   const match = text.match(/(\d{1,2}:\d{2}(?::\d{2})?)[^\d]+(\d{1,2}:\d{2}(?::\d{2})?)/);
-  if (!match) return null;
-  return { start: match[1], end: match[2] };
+  return match ? { start: match[1], end: match[2] } : null;
 }
 
-//BV合法性验证
 function decodeBV(bv) {
   const table = 'fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF';
   const tr = {};
-  for (let i = 0; i < table.length; i++) {
-    tr[table[i]] = i;
-  }
+  for (let i = 0; i < table.length; i++) tr[table[i]] = i;
   const s = [11, 10, 3, 8, 4, 6];
   const xor = 177451812;
   const add = 8728348608;
@@ -27,177 +23,184 @@ function decodeBV(bv) {
   return (r - add) ^ xor;
 }
 
-// 查询现有调用次数
-async function checkAndUpdateBVCall(bvNumber) {
-  const queryUrl = `${SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
+// ----------- Supabase 操作函数 -----------
+async function queryBvCallAi(bvNumber) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
   const headers = {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json'
+    apikey: process.env.SUPABASE_API_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
   };
+  const resp = await fetch(url, { headers });
+  return resp.ok ? await resp.json() : null;
+}
 
-  const resp = await fetch(queryUrl, { headers });
-  const data = await resp.json();
+async function updateBvCallTimes(bvNumber, newTimes) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
+  const headers = {
+    apikey: process.env.SUPABASE_API_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Content-Type': 'application/json',
+  };
+  const resp = await fetch(url, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ call_times: newTimes }),
+  });
+  return resp.ok;
+}
 
-  if (data.length > 0) {
-    const callTimes = data[0].call_times;
-    if (callTimes >= 2) {
-      return { allowed: false, reason: "该BV号已超出调用次数限制" };
+async function insertBvCall(bvNumber) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls`;
+  const headers = {
+    apikey: process.env.SUPABASE_API_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Content-Type': 'application/json',
+  };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ bv: bvNumber, call_times: 1 }),
+  });
+  return resp.ok;
+}
+
+async function checkAndUpdateBVCall(bvNumber) {
+  const data = await queryBvCallAi(bvNumber);
+  if (data && data.length > 0) {
+    if (data[0].call_times >= 2) {
+      return { allowed: false, reason: '该BV号已超出调用次数限制' };
     }
-    // 更新调用次数
-    await fetch(queryUrl, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ call_times: callTimes + 1 })
-    });
+    const updated = await updateBvCallTimes(bvNumber, data[0].call_times + 1);
+    if (!updated) throw new Error('更新调用次数失败');
   } else {
-    // 插入新记录
-    await fetch(`${SUPABASE_URL}/rest/v1/bv_calls`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ bv: bvNumber, call_times: 1 })
-    });
+    const inserted = await insertBvCall(bvNumber);
+    if (!inserted) throw new Error('插入调用记录失败');
   }
   return { allowed: true };
 }
 
+async function checkEnoughRecords(bvNumber) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps?bv=eq.${bvNumber}`;
+  const headers = {
+    apikey: process.env.SUPABASE_API_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+  };
+  const resp = await fetch(url, { headers });
+  if (!resp.ok) return false;
+  const data = await resp.json();
+  return data.length >= 5;
+}
+
+async function insertAdTimestamp({ bv, timestamp_range, source, user_id, UP_id, ip }) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps`;
+  const headers = {
+    apikey: process.env.SUPABASE_API_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=minimal',
+  };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ bv, timestamp_range, source, user_id, UP_id, ip }),
+  });
+  return resp.ok;
+}
+
+// ----------- 调用AI -----------
+async function fetchAITimestamps(subtitles) {
+  const reqBody = {
+    model: 'moonshot-v1-auto',
+    messages: [
+      { role: 'system', content: '你是一个视频字幕分析助手，能够识别广告时间段' },
+      {
+        role: 'user',
+        content: `请分析以下视频字幕，分析哪段是口播广告部分，告诉我广告部分的起止时间戳，广告长度一般不低于30秒，
+        且一般不会出现在视频的前3分钟,也有例外。仅回复广告时间戳，不要回复其他内容。若有多个广告时间段，返回最像商业合作的一段。
+        返回格式：\n广告开始 xx:xx \n广告结束 xx:xx \n\n${subtitles.join('\n')}`
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 100,
+  };
+
+  const resp = await fetch(process.env.AI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.AI_API_KEY}`,
+    },
+    body: JSON.stringify(reqBody),
+  });
+
+  if (!resp.ok) throw new Error('AI 请求失败');
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content || null;
+}
+
+// ----------- 业务主流程 -----------
+async function processRequest({ bv, subtitles, user_id, UP_id, ip }) {
+  if (!bv || !Array.isArray(subtitles) || subtitles.length === 0) {
+    return { status: 400, json: { error: '缺少必要字段' } };
+  }
+  const avNumber = decodeBV(bv);
+  if (avNumber === null) {
+    return { status: 400, json: { error: 'BV号无效' } };
+  }
+
+  if (await checkEnoughRecords(bv)) {
+    return { status: 200, json: { success: true, message: '记录已足够，无需再次调用AI' } };
+  }
+
+  const check = await checkAndUpdateBVCall(bv);
+  if (!check.allowed) {
+    return { status: 403, json: { error: check.reason } };
+  }
+
+  const aiResp = await fetchAITimestamps(subtitles);
+  if (!aiResp || !aiResp.includes(':')) {
+    return { status: 500, json: { error: 'AI 返回格式异常' } };
+  }
+
+  const timestamp_Obj = extractTimestamp(aiResp);
+  if (!timestamp_Obj) {
+    return { status: 200, json: { success: false, error: '未检测到时间戳' } };
+  }
+
+  const inserted = await insertAdTimestamp({
+    bv,
+    timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
+    source: 'cloudAIbyVercel',
+    user_id,
+    UP_id,
+    ip,
+  });
+
+  if (!inserted) {
+    return { status: 500, json: { error: '数据库写入失败' } };
+  }
+
+  return { status: 200, json: { success: true, timestamp_Obj, raw: aiResp } };
+}
+
+// ----------- 入口handler -----------
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-  // 处理 CORS 预检请求
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    return res.status(204).end(); // 204 No Content
+    return res.status(204).end();
   }
-
-  // 设置 CORS 响应头，允许跨域访问
   res.setHeader('Access-Control-Allow-Origin', '*');
-
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: '只支持POST' });
   }
-  
-  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
-               .split(',')[0]
-               .trim();
-  // 解析 body
-  const { bvNumber, subtitles, user_id, UP_id} = req.body;
-
-  if (!bvNumber || !Array.isArray(subtitles) || subtitles.length === 0) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  const avNumber = decodeBV(bvNumber);
-  if (avNumber === null) {
-    return res.status(400).json({ error: 'Invalid BV number' });
-  }
-  
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   try {
-    // 0. 检查是否已存在 5 条记录，避免重复调用 AI
-    const existingResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps?bv=eq.${bvNumber}`, {
-      headers: {
-        "apikey": process.env.SUPABASE_API_KEY,
-        "Authorization": `Bearer ${process.env.SUPABASE_API_KEY}`
-      }
-    });
-    const existingData = await existingResp.json();
-    if (existingData.length >= 5) {
-      return res.status(200).json({ success: true, message: 'Already has enough records' });
-    }
-    
-    //检查该BV历史调用AI次数
-    const check = await checkAndUpdateBVCall(bvNumber);
-    if (!check.allowed) {
-      return res.status(403).json({ error: check.reason });
-    }
-    // 1. 构造 AI 请求内容
-    const requestData = {
-      model: "moonshot-v1-auto",
-      messages: [
-        {
-          role: 'system',
-          content: '你是一个视频字幕分析助手，能够识别广告时间段'
-        },
-        {
-          role: 'user',
-          content: `请分析以下视频字幕，分析哪段是口播广告部分，告诉我广告部分的起止时间戳，广告长度一般不低于30秒，
-          且一般不会出现在视频的前3分钟,也有例外。仅回复广告时间戳，不要回复其他内容。若有多个广告时间段，返回最像商业合作的一段。
-          返回格式：\n广告开始 xx:xx \n广告结束 xx:xx \n\n${subtitles.join('\n')}`
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 100
-    };
-
-    // 2. AI 请求逻辑
-    let aiResponseText = null;
-    
-    try {
-      const aiResp = await fetch(`${process.env.AI_API_URL}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.AI_API_KEY}`
-        },
-        body: JSON.stringify(requestData)
-      });
-    
-      if (!aiResp.ok) {
-        const errJson = await aiResp.json().catch(() => ({}));
-        console.error("AI 请求失败：", errJson);
-        return res.status(500).json({ error: 'AI 请求失败' });
-      }
-    
-      const aiJson = await aiResp.json();
-      aiResponseText = aiJson.choices?.[0]?.message?.content;
-      console.log(bvNumber, "kimi 返回：", aiResponseText);
-    } catch (err) {
-      console.error("AI 请求异常：", err);
-      return res.status(500).json({ error: 'AI 请求异常' });
-    }
-
-    if (!aiResponseText) {
-      return res.status(500).json({ error: 'AI 无响应内容' });
-    }
-    
-    if (typeof aiResponseText !== 'string' || !aiResponseText.includes(':')) {
-      return res.status(500).json({ error: 'AI 返回格式异常' });
-    }
-    
-    // 3. 提取时间戳
-    const timestamp_Obj = extractTimestamp(aiResponseText);
-    if (!timestamp_Obj) {
-      return res.status(200).json({ success: false, error: "AI 返回中未检测到时间戳" });
-    }
-
-    // 4. 写入 Supabase
-    const supaResp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": process.env.SUPABASE_API_KEY,
-        "Authorization": `Bearer ${process.env.SUPABASE_API_KEY}`,
-        "Prefer": "return=minimal"
-      },
-      body: JSON.stringify({
-        bv: bvNumber,
-        timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
-        source: 'cloudAIbyVercel',
-        user_id,
-        UP_id,
-        ip,
-      })
-    });
-
-    if (!supaResp.ok) {
-      const supaErr = await supaResp.text();
-      console.error("写入 Supabase 失败：", supaErr);
-      return res.status(500).json({ error: 'Supabase 写入失败' });
-    }
-
-    return res.status(200).json({ success: true, timestamp_Obj, raw: aiResponseText });
-
+    const result = await processRequest({ ...req.body, ip });
+    return res.status(result.status).json(result.json);
   } catch (err) {
-    console.error("处理失败：", err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error('错误：', err);
+    return res.status(500).json({ error: '服务器内部错误' });
   }
-}
+};
