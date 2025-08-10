@@ -110,7 +110,7 @@ async function insertAdTimestamp({ bv, timestamp_range, source, user_id, UP_id, 
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitles) {
   const reqBody = {
-    model: 'moonshot-v1-auto',
+    model: 'kimi-latest-32k',
     messages: [
       { role: 'system', content: '你是一个视频字幕分析助手，能够识别广告时间段' },
       {
