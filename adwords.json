@@ -1,5 +1,5 @@
 {
-keywordStr: 
+"keywordStr": 
         "[某淘🍑]宝|[京某🐶]东|天猫|手淘|美团|拼多|并夕|饿了么|转转|旗舰店|双(11|12|十一)|618|巨划算|
         萌牙家|妙界|神气小鹿|DAWEI|温眠|友望|伊莲|溪木源|海力生|水月雨|谷雨|马登|男装|诺斐丽|菌君家|
         补贴|折扣|福利|评论区|顶链|蓝链|退款|限时|免费|专属|七夕|赞助|大促|返现|品牌方|捡漏|销量|甲方|
@@ -9,7 +9,7 @@ keywordStr:
         国补|正品|催更|水乳|祛痘|[养修]护|专利|男士|洁面| 后生元|益生菌|满减|厂商|礼[包物盒品]|
         [领惠叠]券|(?:体验|科技|口|质|爽|快)感|[低特好底保降差性]价|护[肝腰颈眼枕理肤发耳膝]|
         (?:[他她它](?:们)?)家",
-adLinks: 
+"adLinks": 
     [
         'taobao.com', 'tb.cn', 'jd.com', 'pinduoduo.com','zhuanzhuan.com','m.zhuanzhuan.com',
         'mall.bilibili.com', 'gaoneng.bilibili.com', 'bilibili.com/cheese/', 'biligame.com/',
