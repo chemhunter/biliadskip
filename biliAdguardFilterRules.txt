@@ -1,0 +1,123 @@
+! 2025年3月3日 https://t.bilibili.com
+t.bilibili.com##.bili-dyn-version-control
+t.bilibili.com##.bili-dyn-banner
+t.bilibili.com##.download-client-trigger.download-entry
+
+! 2024-04-09 https://t.bilibili.com
+t.bilibili.com##.van-popover__reference.download-client-trigger.link
+t.bilibili.com##.van-popover__reference.mini-vip
+
+! 2024-04-09 https://search.bilibili.com
+search.bilibili.com##.download-client-trigger.download-entry
+search.bilibili.com##.vip-wrap
+
+! 2024-04-09 https://www.bilibili.com
+bilibili.com##.download-client-trigger.download-entry
+bilibili.com##.right-entry--vip.right-entry__outside
+
+! 2024-04-09 https://t.bilibili.com
+bilibili.com##.bili-dyn-version-control
+
+! 2024-04-09 https://live.bilibili.com
+live.bilibili.com##.w-100.over-hidden.p-relative.flip-view
+
+! 2024-04-10 https://t.bilibili.com
+t.bilibili.com##.bili-dyn-banner
+
+! 2024-04-10 https://message.bilibili.com
+bilibili.com##.van-popover__reference.download-client-trigger.link
+
+! 2024-04-16 https://t.bilibili.com
+t.bilibili.com##.loc-mc-box
+
+! 2024-04-20 https://www.bilibili.com
+bilibili.com##.loc-moveclip.loc-entry
+bilibili.com##.part-1.pop-live-small-mode
+
+
+! 2024-04-20 https://space.bilibili.com
+bilibili.com##.download-client-trigger.download-entry
+bilibili.com##.loc-moveclip.loc-entry
+
+! 2024-04-21 https://live.bilibili.com
+live.bilibili.com##.t-center.p-relative.border-box.player-area-ctnr
+
+! 2024-04-21 https://t.bilibili.com
+t.bilibili.com##.topic-panel
+t.bilibili.com##.right
+
+! 2024-04-22 https://www.bilibili.com
+bilibili.com##.act-end.activity-m-v1
+bilibili.com##.adblock-tips
+
+! 2024-04-24 https://www.bilibili.com
+www.bilibili.com##.inside-wrp
+
+! 2024-04-24 https://t.bilibili.com
+bilibili.com##.reply-notice
+
+! 2024-04-24 https://live.bilibili.com
+bilibili.com##.bg-bright-filter.z-gift-control-section.border-box.p-relative.gift-control-section
+bilibili.com##.p-relative.list-item
+bilibili.com##.f-left.h-100.shortcuts-ctnr
+
+! 2024-04-26 https://live.bilibili.com
+live.bilibili.com###web-player__bottom-bar__container
+
+
+! 2025年3月10日 https://www.bilibili.com
+www.bilibili.com##.fixed-card
+
+! 2025年3月11日 https://message.bilibili.com
+message.bilibili.com##.helper-btn
+
+! 2025年3月16日 https://live.bilibili.com
+live.bilibili.com##.购物 > .border-box.pointer.t-center.p-relative.dp-i-block.nav-item
+live.bilibili.com##.帮我玩
+live.bilibili.com##.互动玩法 > .border-box.pointer.t-center.p-relative.dp-i-block.nav-item
+live.bilibili.com##.border-box.convention-msg.chat-item
+
+! 2025年3月19日 https://www.bilibili.com
+www.bilibili.com##.paybar_container__WApBR
+
+! 2025年3月22日 https://www.bilibili.com
+www.bilibili.com##.van-popover__reference.video-share
+
+! 2025年3月31日 https://www.bilibili.com
+www.bilibili.com##.video-toolbar-right-item.video-tool-more
+live.bilibili.com##.player-area-ctnr border-box p-relative t-center
+
+! 2025年4月9日 https://live.bilibili.com
+live.bilibili.com##.shop-popover
+live.bilibili.com##.room-info-ctnr
+
+! 2025年4月15日 https://www.bilibili.com
+www.bilibili.com##.storable.fixed-sidenav-storage-item.customer-service
+www.bilibili.com##.slide-ad-exp
+
+! 2025年5月1日 https://www.bilibili.com
+www.bilibili.com##.channel-items__right
+
+! 2025年5月17日 https://live.bilibili.com
+live.bilibili.com##.rank-item
+
+! 2025年5月28日 https://www.bilibili.com
+www.bilibili.com##li.v-popover-wrap:nth-of-type(7)
+
+! 2025年6月1日 https://www.bilibili.com
+www.bilibili.com##.video-card-ad-small
+
+
+! 2025年6月8日 https://live.bilibili.com
+live.bilibili.com##.component-item.static
+live.bilibili.com##.s-activity-entry.activity-entry.activity-gather-entry
+
+! 2025年6月20日 https://live.bilibili.com
+live.bilibili.com##.p-relative.bottom-actions
+! 2025年7月17日 https://live.bilibili.com
+live.bilibili.com##.over-hidden.p-relative.w-100.brush-prompt
+
+
+! 2025年8月3日 https://www.bilibili.com
+www.bilibili.com##.video-page-special-card-small > .card-box
+www.bilibili.com##.video-page-game-card-small
