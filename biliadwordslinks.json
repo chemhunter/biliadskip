@@ -27,7 +27,7 @@
     "aiButtonElments": {
         "AiAssistant": ".video-ai-assistant",
         "PopupBody": "._Body_196qs_116",
-        "TabItems": "._Tabs_krx6h_1 ._TabItem_krx6h_8",
+        "TabItem": "._Tabs_krx6h_1 ._TabItem_krx6h_8",
         "Label": "._Label_krx6h_18",
         "isActive": "_Active_krx6h_36",
         "EmptyTips": "._EmptyTips_2jiok_17",
