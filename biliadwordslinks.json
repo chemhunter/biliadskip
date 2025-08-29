@@ -27,8 +27,8 @@
     ],
     "aiButtonElments": {
         "AiAssistant": [".video-ai-assistant"],
-        "PopupBody": ["._Body_196qs_116" ,"[data-video-assistant-subject-body]"],
-        "TabsContainer": ["_Tabs_krx6h_1" ,"[data-video-assistant-subject-tabs]"],
+        "PopupBody": ["._Body_196qs_116", "[data-video-assistant-subject-body]"],
+        "TabsContainer": ["_Tabs_krx6h_1", "[data-video-assistant-subject-tabs]"],
         "TabItem": ["._TabItem_krx6h_8", "[data-video-assistant-subject-tabs] [class*='_TabItem_']"],
         "Label": ["._Label_krx6h_18", "[class*='_Label_']"],
         "ActiveTabClass": "_Active_",
