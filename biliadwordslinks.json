@@ -27,11 +27,10 @@
     ],
     "aiButtonElments": {
         "AiAssistant": [".video-ai-assistant"],
-        "PopupBody": ["._Body_196qs_116", "[data-video-assistant-subject-body]"],
+        "PopupBody": ["._Body_196qs_116", "[data-video-assistant-subject-body]", "[data-video-assistant-subject] [class*='_Body_']"],
         "TabsContainer": ["_Tabs_krx6h_1", "[data-video-assistant-subject-tabs]"],
         "TabItem": ["._TabItem_krx6h_8", "[data-video-assistant-subject-tabs] [class*='_TabItem_']"],
         "Label": ["._Label_krx6h_18", "[class*='_Label_']"],
-        "ActiveTabClass": "_Active_",
         "EmptyTips": ["._EmptyTips_2jiok_17", "[class*='_EmptyTips_']"],
         "EachSubtitle": ["._Part_1iu0q_16", "[data-video-assistant-subject-subtitles] [class*='_Part_']"],
         "CloseBtn": ["._CloseBtn_196qs_87", "[data-video-assistant-subject-head] [class*='_CloseBtn_']"],
