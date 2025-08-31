@@ -91,6 +91,7 @@ async function checkEnoughRecords(bvNumber) {
   return data.length >= 5;
 }
 
+/* 移除该逻辑
 async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }) {
     const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
     const headers = {'Content-Type': 'application/json'};
@@ -116,6 +117,7 @@ async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }
         return false;
     }
 }
+*/
 
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitles, commentText ='') {
@@ -209,18 +211,19 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
     return { status: 200, json: { success: false, error: 'AI返回内容未检测到时间戳' } };
   }
 
-  const inserted = await uploadAdTimestamp({
+  /* 不需要云端上传
+  const uploaded = await uploadAdTimestamp({
     bv,
     timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
     source: 'kimiAI_Vercel',
     user_id,
     UP_id,
   });
-
-  if (!inserted) {
+  if (!uploaded) {
     return { status: 500, json: { error: '数据库写入失败' } };
   }
-
+*/
+  
   return { status: 200, json: { success: true, timestamp_Obj, raw: aiResp } };
 }
 
