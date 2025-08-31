@@ -126,10 +126,33 @@ async function fetchAITimestamps(subtitles, commentText ='') {
     messages: [
         {
           role: 'system',
-          content: '你是一个电商专家，识别广告时间段'
+          content: '你是一个精准的广告分析引擎，你的唯一任务是根据用户提供的文本，返回一个结构化的JSON对象。'
         },
         {
           role: 'user',
+          const user_prompt = `
+          分析以下视频字幕，判断其中是否包含商业广告或推广内容。
+          你的任务是返回一个JSON对象，该对象必须包含以下字段：
+          - "start": 广告的起始时间戳 (格式 "mm:ss")。如果无广告，则为 null。
+          - "end": 广告的结束时间戳 (格式 "mm:ss")。如果无广告，则为 null。
+          - "noAd": 一个布尔值，如果确定无广告则为 true，否则为 false。
+          - "product": 广告中推广的商品或服务名称。如果无广告，则为 null。
+          
+          规则：
+          1. 你的回复【必须】是一个合法的、可以被JSON.parse()解析的JSON对象。
+          2. 不要回复任何JSON对象之外的额外文字、解释或注释。
+          3. 如果在字幕中找到明确的商业推广，请填写 "start", "end", "product" 字段，并将 "noAd" 设为 false。
+          4. 如果在仔细分析后，确定字幕中【没有】任何商业推广，返回{"start": null, "end": null，"product": null，"noAd": true}。
+          5. 博主身边的故事这类与主题无关的内容，将这些引入广告的先导部分也视做广告。将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为"end"时间戳。
+
+          以下是可能包含广告的字幕内容：
+          ${subtitles.join('\n')}
+          
+          以下是可能包含线索的评论区文本，供你参考：
+          ${commentText}
+          `,
+
+          /*
           content: `分析以下字幕，告诉我广告部分的起止时间戳，若未发现广告直接回复“无广告”。
              广告部分一般不低于30秒，也有例外。如果你发现多段广告，回复我最像商业合作的那一段。
              博主聊与视频主题无关的内容，比如自己身边的事，将这些引入广告的先导部分也看做广告。
@@ -137,7 +160,7 @@ async function fetchAITimestamps(subtitles, commentText ='') {
              将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为结束时间戳。
              发现广告的话仅回复广告时间戳和产品名称，不要回复其他内容。
              返回格式：\n广告开始 xx:xx, 广告结束 xx:xx ，产品：xx\n\n${subtitles.join('\n')}\n\n
-             下面是评论区置顶广告文本，供你参考以精准识别广告：\n${commentText}`
+             下面是评论区置顶广告文本，供你参考以精准识别广告：\n${commentText}` */
         },
     ],
     temperature: 0.3,
@@ -192,39 +215,39 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
     return { status: 403, json: { error: check.reason } };
   }
 
-  const sanitizedCommentText = (commentText || '').toString().slice(0, 100);
-  const aiResp = await fetchAITimestamps(subtitles, sanitizedCommentText);
-  if (!aiResp) {
-      return { status: 500, json: { error: 'AI服务未返回有效内容' } };
-  }
-  
-  if (aiResp.includes('无广告')) {
-      return { status: 200, json: { success: true, timestamp_Obj: null, message: '无广告' } };
-  }  
-  
-  if (!aiResp.includes(':')) {
-    return { status: 500, json: { error: 'AI 返回格式异常' } };
+  const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
+  const aiRespText = await fetchAITestamps(subtitles, sanitizedCommentText);
+
+  if (!aiRespText) {
+      return { status: 500, json: { error: 'AI服务未返回任何内容' } };
   }
 
-  const timestamp_Obj = extractTimestamp(aiResp);
-  if (!timestamp_Obj) {
-    return { status: 200, json: { success: false, error: 'AI返回内容未检测到时间戳' } };
+  // --- 核心修改：直接解析JSON，不再需要正则表达式 ---
+  let aiResultJson;
+  try {
+      aiResultJson = JSON.parse(aiRespText);
+  } catch (e) {
+      console.error("JSON解析失败!", aiRespText);
+      return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
   }
 
-  /* 不需要云端上传
-  const uploaded = await uploadAdTimestamp({
-    bv,
-    timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
-    source: 'kimiAI_Vercel',
-    user_id,
-    UP_id,
-  });
-  if (!uploaded) {
-    return { status: 500, json: { error: '数据库写入失败' } };
+  let responseToClient;
+  if (aiResultJson.noAd === true) {
+      responseToClient = { success: true, timestamp_Obj: null, message: '无广告' };
+  } else if (aiResultJson.start && aiResultJson.end) {
+      responseToClient = { 
+          success: true, 
+          timestamp_Obj: {
+              start: aiResultJson.start,
+              end: aiResultJson.end
+          },
+          product: aiResultJson.product // (可选) 也可以将产品名称返回
+      };
+  } else {
+      return { status: 500, json: { error: 'AI返回的JSON内容无效', raw: aiResultJson } };
   }
-*/
-  
-  return { status: 200, json: { success: true, timestamp_Obj, raw: aiResp } };
+
+  return { status: 200, json: responseToClient };
 }
 
 // ----------- 入口handler -----------
