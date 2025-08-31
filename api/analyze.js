@@ -91,20 +91,30 @@ async function checkEnoughRecords(bvNumber) {
   return data.length >= 5;
 }
 
-async function insertAdTimestamp({ bv, timestamp_range, source, user_id, UP_id, ip }) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps`;
-  const headers = {
-    apikey: process.env.SUPABASE_API_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=minimal',
-  };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ bv, timestamp_range, source, user_id, UP_id, ip }),
-  });
-  return resp.ok;
+async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }) {
+    const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
+    const headers = {'Content-Type': 'application/json'};
+    const body = {bv, timestamp_range, source, user_id, UP_id};
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error(`❌ 调用Supabase Edge Function失败! 状态码: ${resp.status}, 响应: ${errorText}`);
+            return false;
+        }
+        const resultJson = await resp.json();
+        console.log('✅ 成功通过Edge Function上传时间戳:', resultJson);
+        return true;
+
+    } catch (err) {
+        console.error("❌ 调用Supabase Edge Function时发生网络异常:", err);
+        return false;
+    }
 }
 
 // ----------- 调用AI -----------
@@ -199,13 +209,12 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
     return { status: 200, json: { success: false, error: 'AI返回内容未检测到时间戳' } };
   }
 
-  const inserted = await insertAdTimestamp({
+  const inserted = await uploadAdTimestamp({
     bv,
     timestamp_range: `${timestamp_Obj.start} - ${timestamp_Obj.end}`,
-    source: 'cloudAIbyVercel',
+    source: 'kimiAI_Vercel',
     user_id,
     UP_id,
-    ip,
   });
 
   if (!inserted) {
