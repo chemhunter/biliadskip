@@ -110,7 +110,7 @@ async function insertAdTimestamp({ bv, timestamp_range, source, user_id, UP_id, 
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitles, commentText ='') {
   const reqBody = {
-    model: 'kimi-latest-32k',
+    model: 'moonshot-v1-32k',
     messages: [
         {
           role: 'system',
@@ -141,7 +141,22 @@ async function fetchAITimestamps(subtitles, commentText ='') {
     body: JSON.stringify(reqBody),
   });
 
-  if (!resp.ok) throw new Error('AI 请求失败');
+    // --- 核心修改：增加详细的失败日志记录 ---
+    if (!resp.ok) {
+        let errorBody = '';
+        try {
+            errorBody = await resp.text();
+        } catch (e) {
+            errorBody = '无法读取响应体。';
+        }
+        const errorMessage = `AI 请求失败! 
+            状态码 (Status Code): ${resp.status} ${resp.statusText}
+            响应体 (Response Body): ${errorBody}
+            请求目标URL: ${process.env.AI_API_URL}
+        `;
+        throw new Error(errorMessage);
+    }
+
   const data = await resp.json();
   return data.choices?.[0]?.message?.content || null;
 }
