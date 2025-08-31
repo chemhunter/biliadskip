@@ -167,13 +167,21 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
 
   const sanitizedCommentText = (commentText || '').toString().slice(0, 100);
   const aiResp = await fetchAITimestamps(subtitles, sanitizedCommentText);
-  if (!aiResp || !aiResp.includes(':')) {
+  if (!aiResp) {
+      return { status: 500, json: { error: 'AI服务未返回有效内容' } };
+  }
+  
+  if (aiResp.includes('无广告')) {
+      return { status: 200, json: { success: true, timestamp_Obj: null, message: '无广告' } };
+  }  
+  
+  if (!aiResp.includes(':')) {
     return { status: 500, json: { error: 'AI 返回格式异常' } };
   }
 
   const timestamp_Obj = extractTimestamp(aiResp);
   if (!timestamp_Obj) {
-    return { status: 200, json: { success: false, error: '未检测到时间戳' } };
+    return { status: 200, json: { success: false, error: 'AI返回内容未检测到时间戳' } };
   }
 
   const inserted = await insertAdTimestamp({
