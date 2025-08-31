@@ -80,7 +80,7 @@ async function checkAndUpdateBVCall(bvNumber) {
 }
 
 async function checkEnoughRecords(bvNumber) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps?bv=eq.${bvNumber}`;
+  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps_public?bv=eq.${bvNumber}`;
   const headers = {
     apikey: process.env.SUPABASE_API_KEY,
     Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
