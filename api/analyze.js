@@ -215,7 +215,7 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
   }
 
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
-  const aiRespText = await fetchAITestamps(subtitles, sanitizedCommentText);
+  const aiRespText = await fetchAITimestamps(subtitles, sanitizedCommentText);
 
   if (!aiRespText) {
       return { status: 500, json: { error: 'AI服务未返回任何内容' } };
