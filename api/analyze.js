@@ -108,7 +108,7 @@ async function insertAdTimestamp({ bv, timestamp_range, source, user_id, UP_id, 
 }
 
 // ----------- 调用AI -----------
-async function fetchAITimestamps(subtitles) {
+async function fetchAITimestamps(subtitles, commentText ='') {
   const reqBody = {
     model: 'kimi-latest-32k',
     messages: [
@@ -125,7 +125,7 @@ async function fetchAITimestamps(subtitles) {
              将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为结束时间戳。
              发现广告的话仅回复广告时间戳和产品名称，不要回复其他内容。
              返回格式：\n广告开始 xx:xx, 广告结束 xx:xx ，产品：xx\n\n${subtitles.join('\n')}\n\n
-             下面是评论区置顶广告文本，供你参考以精准识别广告：\n${state.commentText}`
+             下面是评论区置顶广告文本，供你参考以精准识别广告：\n${commentText}`
         },
     ],
     temperature: 0.3,
@@ -147,7 +147,7 @@ async function fetchAITimestamps(subtitles) {
 }
 
 // ----------- 业务主流程 -----------
-async function processRequest({ bv, subtitles, user_id, UP_id, ip }) {
+async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) {
   if (!bv || !Array.isArray(subtitles) || subtitles.length === 0) {
     return { status: 400, json: { error: '缺少必要字段' } };
   }
@@ -165,7 +165,8 @@ async function processRequest({ bv, subtitles, user_id, UP_id, ip }) {
     return { status: 403, json: { error: check.reason } };
   }
 
-  const aiResp = await fetchAITimestamps(subtitles);
+  const sanitizedCommentText = (commentText || '').toString().slice(0, 100);
+  const aiResp = await fetchAITimestamps(subtitles, sanitizedCommentText);
   if (!aiResp || !aiResp.includes(':')) {
     return { status: 500, json: { error: 'AI 返回格式异常' } };
   }
