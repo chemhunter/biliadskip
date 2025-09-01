@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>BiliAdSkipper - 公共AI服务</title>
+	<style>
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+			background-color: #f0f2f5;
+			color: #333;
+			margin: 0;
+		}
+		.container, .guide {
+			background-color: #fff;
+			padding: 40px;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+		}
+		.container {
+			border-top-left-radius: 8px;
+			border-top-right-radius: 8px;
+			border-bottom: 1px solid #e9e9e9;
+		}
+		.guide {
+			border-bottom-left-radius: 8px;
+			border-bottom-right-radius: 8px;
+			padding-top: 25px;
+		}
+		h1 {
+			color: #00a1d6;
+			margin-top: 0;
+			margin-bottom: 10px;
+			text-align: center;
+		}
+		p {
+			font-size: 1.1em;
+			line-height: 1.6;
+			margin-bottom: 20px;
+			text-align: center;
+		}
+		.status {
+			font-weight: bold;
+			color: #27ae60;
+		}
+		code {
+			background-color: #eee;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-family: 'Courier New', Courier, monospace;
+		}
+		a {
+			color: #00a1d6;
+			text-decoration: none;
+		}
+		a:hover {
+			text-decoration: underline;
+		}
+		footer {
+			text-align: center;
+			margin-top: 30px;
+			padding-top: 20px;
+			border-top: 1px solid #eee;
+			font-size: 0.9em;
+			color: #888;
+		}
+		.loc { text-decoration: underline; }
+		.copy { cursor: pointer; color: purple; }
+	</style>
+</head>
+<body>
+    <div class="main-wrapper" style="width: 100%; display: flex; justify-content: center; align-items: center; min-height: 280vh; padding: 20px 0;">
+        <div class="module-group" style="max-width: 900px; width: 100%;">
+			<div class="container">
+				<h1>BiliAdSkipper 公共AI服务</h1>
+				<p>
+					这是一个为 <a href="https://greasyfork.org/zh-CN/scripts/542541" target="_blank">油猴脚本 BiliAdSkipper </a> 提供支持的后台AI分析服务。
+				</p>
+				<p>服务状态: <span class="status">正常运行中</span></p>
+				<p>此页面仅为状态展示页。服务接口位于 <code>/api/analyze</code>，并只接受来自脚本的POST请求。</p>
+				<p><a href="https://github.com/chemhunter/biliadskip" target="_blank">BiliAdSkipper</a> 是一个社区化的免费公共服务，用来智能跳过网页端视频中广告部分。</p>
+				<p>人人共享，人人受益</p>
+			</div>
+			<div class="guide">
+			<h3>油猴脚本安装教程（完整）</h3>
+			<li>在浏览器中安装 <a target="_blank" href="https://www.tampermonkey.net/">Tampermonkey（篡改猴/油猴）插件</a>，推荐使用微软Edge或者Chrome浏览器，如安装过则直接下一步。</li>
+			<li>在浏览器中打开 <a target="_blank" href="https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>，即可自动跳转到安装界面。<br>失败的话，可以试试镜像链接  <a target="_blank" href="https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a></li>
+			<li>点击<b>“安装”</b>即可自动完成。（若未跳转到安装界面请继续下方手动安装步骤）</li>
+			<h3>手动安装</h3>
+			<li>打开扩展管理界面，Edge浏览器 <a target="_blank" href="edge://extensions/">edge://extensions/</a> ，chrome浏览器 <a target="_blank" href="chrome://extensions/">chrome://extensions/</a>。<br>
+			找到”篡改猴“这个扩展，点击<b>”详情“</b>进入查看页面。<br>
+			<img title="扩展详情" src="https://s2.loli.net/2025/09/01/KzUBWdDxnJjOwL4.png"><br><br>
+			新版chrome浏览器会有一个<b>”允许运行用户脚本“</b>的选项，必须开启。否则浏览器会阻止脚本运行。<br>
+			<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/01/pNiWSTvgxmbeZX8.png"><br><br>
+			下方找到<b>“扩展程序选项”</b>，点击即可进入篡改猴的管理面板。<br>
+			<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/01/bwO2rFqeuUjhINW.png"><br><br>
+			点击右上角“<b>实用工具</b>”，<br>
+			<img title="实用工具" src="http://home.ustc.edu.cn/~haoming/sgs/2-2-2.png"></li><br>
+			<li>在实用工具页面最下方的“<b>从URL安装</b>”处，输入链接 <span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)，点击安装并确认安装。<br>
+			失败的话，同样可以试试镜像链接<br>  <span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)<br>
+			<img title="从URL安装" src="https://s2.loli.net/2025/09/01/pZUjouyNKE2iQJI.png"></li><br>
+			<li>刷新B站网页，脚本即可自动生效。</li>
+		</div>
+		<footer>
+			由 BiliAdSkipper 社区提供支持
+		</footer>
+		</div>
+	</div>
+	<script>
+		function copy(text) {
+			const textarea = document.createElement('textarea');
+			textarea.value = text;
+			document.body.appendChild(textarea);
+			textarea.select();
+			try {
+				const successful = document.execCommand('copy');
+				const msg = successful ? '成功复制到剪贴板' : '复制失败';
+				console.log(msg);
+			} catch (err) {
+				console.error('无法复制', err);
+			}
+			document.body.removeChild(textarea);
+		}
+	</script>
+</body>
+</html>
