@@ -120,7 +120,7 @@ async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }
 */
 
 // ----------- 调用AI -----------
-async function fetchAITimestamps(subtitles, commentText ='') {
+async function fetchAITimestamps(subtitlesText, commentText ='') {
   const system_prompt = `
    你是一个精准的广告分析引擎。
    你的唯一任务是分析用户提供的视频字幕和评论区文本，判断其中是否包含商业广告，并返回一个结构化的JSON对象。
