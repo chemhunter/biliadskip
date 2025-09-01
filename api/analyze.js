@@ -140,22 +140,16 @@ async function fetchAITimestamps(subtitles, commentText ='') {
     5. 博主身边的故事这类与主题无关的内容，将这些引入广告的先导部分也视做广告。将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为"end"时间戳。
 `
   const user_prompt = `
-    分析以下视频字幕内容：
-    ${subtitles.join('\n')}\n
+    分析以下视频字幕内容：\n
+    ${subtitlesText}\n
     以下是可能包含线索的评论区文本，供你参考：
     ${commentText}
     `
   const reqBody = {
     model: 'moonshot-v1-8k',
     messages: [
-        {
-          role: 'system',
-          content: system_prompt,
-        },
-        {
-          role: 'user',
-          content: user_prompt,
-        },
+        { role: 'system', content: system_prompt },
+        { role: 'user', content: user_prompt },
     ],
     temperature: 0.3,
     max_tokens: 100,
@@ -204,13 +198,21 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
     return { status: 200, json: { success: true, message: '记录已足够，无需再次调用AI' } };
   }
 
+    // --- 1. 核心安全加固：对 subtitles 总长度进行校验 ---
+  const MAX_SUBTITLES_LENGTH = 6000; // 设置最大总长度为 6000 字符
+  const subtitlesText = subtitles.join('\n');
+  if (subtitlesText.length > MAX_SUBTITLES_LENGTH) {
+      console.warn(`[安全警告] 来自IP [${ip}] 的请求因字幕过长 (${subtitlesText.length} > ${MAX_SUBTITLES_LENGTH}) 而被拒绝。BV: ${bv}`);
+      return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
+  }
+  
   const check = await checkAndUpdateBVCall(bv);
   if (!check.allowed) {
     return { status: 403, json: { error: check.reason } };
   }
 
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
-  const aiRespText = await fetchAITimestamps(subtitles, sanitizedCommentText);
+  const aiRespText = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
 
   if (!aiRespText) {
       return { status: 500, json: { error: 'AI服务未返回任何内容' } };
