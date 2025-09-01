@@ -133,7 +133,7 @@ async function fetchAITimestamps(subtitles, commentText ='') {
     1. 你的回复【必须】是一个合法的、可以被JSON.parse()解析的JSON对象。
     2. 不要回复任何JSON对象之外的额外文字、解释或注释。
     3. 如果在字幕中找到明确的商业推广，请填写 "start", "end", "product" 字段，并将 "noAd" 设为 false。
-    4. 如果在仔细分析后，确定字幕中【没有】任何商业推广，返回{"start": null, "end": null，"product": null，"noAd": true}。
+    4. 如果在仔细分析后，确定字幕中【没有】任何商业推广，返回{"start": null, "end": null, "product": null, "noAd": true}。
     5. 博主身边的故事这类与主题无关的内容，将这些引入广告的先导部分也视做广告。将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为"end"时间戳。
   
     以下是可能包含广告的字幕内容：
@@ -143,7 +143,7 @@ async function fetchAITimestamps(subtitles, commentText ='') {
     ${commentText}
     `;
   const reqBody = {
-    model: 'moonshot-v1-32k',
+    model: 'moonshot-v1-8k',
     messages: [
         {
           role: 'system',
