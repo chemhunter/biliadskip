@@ -36,7 +36,6 @@ live.bilibili.com##.border-box.convention-msg.chat-item
 live.bilibili.com##.shop-popover
 live.bilibili.com##.room-info-ctnr
 live.bilibili.com##.player-area-ctnr border-box p-relative t-center
-live.bilibili.com##.rank-item
 live.bilibili.com##.component-item.static
 live.bilibili.com##.s-activity-entry.activity-entry.activity-gather-entry
 live.bilibili.com##.p-relative.bottom-actions
@@ -44,7 +43,7 @@ live.bilibili.com##.over-hidden.p-relative.w-100.brush-prompt
 live.bilibili.com###web-player__bottom-bar__container
 live.bilibili.com##.t-center.p-relative.border-box.player-area-ctnr
 live.bilibili.com##.w-100.over-hidden.p-relative.flip-view
-
-!live.bilibili.com##.购物 > .border-box.pointer.t-center.p-relative.dp-i-block.nav-item
-!live.bilibili.com##.帮我玩
-!live.bilibili.com##.互动玩法 > .border-box.pointer.t-center.p-relative.dp-i-block.nav-item
+!live.bilibili.com##.rank-item
+live.bilibili.com##.购物
+live.bilibili.com##.帮我玩
+live.bilibili.com##.互动玩法
