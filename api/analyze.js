@@ -221,18 +221,10 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
   let aiResultJson;
   try {
       let jsonString = aiRespText;
-      const markdownMatch = jsonString.match(/```json\n([\s\S]*?)\n```/);
-      if (markdownMatch && markdownMatch) {
-          jsonString = markdownMatch;
-      }
-
-      const firstBrace = jsonString.indexOf('{');
-      const lastBrace = jsonString.lastIndexOf('}');
-      if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
-          throw new Error("未能定位到有效的JSON对象结构");
-      }
-      jsonString = jsonString.substring(firstBrace, lastBrace + 1);
-      aiResultJson = JSON.parse(jsonString);
+      // 智能提取被 ```json ... ``` 包裹的内容
+      const jsonMatch = aiRespText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
+      if (!jsonMatch) throw new Error("AI回复中未找到有效的JSON代码块");
+      aiResultJson= JSON.parse(jsonMatch[1] || jsonMatch[2]);
     } catch (e) {
       console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
       return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
