@@ -145,8 +145,50 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     以下是可能包含线索的评论区文本，供你参考：
     ${commentText}
     `
+    // --- 1. 核心修改：配置源的动态决策 ---
+    let apiUrl;
+    let apiKey;
+    let selectedModel;
+    let providerName = 'Default Kimi';
+
+    const aliyunConfigString = Deno.env.get("ALIYUN");
+
+    if (aliyunConfigString) {
+        log('检测到 ALIYUN 环境变量，优先使用...');
+        try {
+            const aliyunConfig = JSON.parse(aliyunConfigString);
+            if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
+                apiUrl = aliyunConfig.apiUrl;
+                apiKey = aliyunConfig.apikey;
+                
+                const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
+                selectedModel = aliyunConfig.model[randomIndex];
+                
+                providerName = `Aliyun (${selectedModel})`; // 更新提供商名称用于日志
+                log(`✅ 已从阿里云配置中加载，随机选择模型: ${selectedModel}`);
+            } else {
+                throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
+            }
+        } catch (e) {
+            console.error("❌ 解析ALIYUN环境变量失败！将回退到默认配置。", e);
+            apiUrl = null; 
+        }
+    }
+
+    if (!apiUrl) {
+        log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
+        apiUrl = Deno.env.get('AI_API_URL');
+        apiKey = Deno.env.get('AI_API_KEY');
+        selectedModel = 'moonshot-v1-8k';
+    }
+    
+    if (!apiUrl || !apiKey) {
+        throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
+    }
+
+
   const reqBody = {
-    model: 'moonshot-v1-8k',
+    model: selectedModel,
     messages: [
         { role: 'system', content: system_prompt },
         { role: 'user', content: user_prompt },
@@ -155,11 +197,11 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     max_tokens: 100,
   };
 
-  const resp = await fetch(process.env.AI_API_URL, {
+  const resp = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.AI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(reqBody),
   });
@@ -172,10 +214,10 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
         } catch (e) {
             errorBody = '无法读取响应体。';
         }
-        const errorMessage = `AI 请求失败! 
+        const errorMessage = `AI [${providerName}] 请求失败! 
             状态码 (Status Code): ${resp.status} ${resp.statusText}
             响应体 (Response Body): ${errorBody}
-            请求目标URL: ${process.env.AI_API_URL}
+            请求目标URL: ${apiUrl}
         `;
         throw new Error(errorMessage);
     }
