@@ -205,21 +205,21 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     body: JSON.stringify(reqBody),
   });
 
-    // --- 核心修改：增加详细的失败日志记录 ---
-    if (!resp.ok) {
-        let errorBody = '';
-        try {
-            errorBody = await resp.text();
-        } catch (e) {
-            errorBody = '无法读取响应体。';
-        }
-        const errorMessage = `AI [${providerName}] 请求失败! 
-            状态码 (Status Code): ${resp.status} ${resp.statusText}
-            响应体 (Response Body): ${errorBody}
-            请求目标URL: ${apiUrl}
-        `;
-        throw new Error(errorMessage);
-    }
+  // --- 核心修改：增加详细的失败日志记录 ---
+  if (!resp.ok) {
+      let errorBody = '';
+      try {
+          errorBody = await resp.text();
+      } catch (e) {
+          errorBody = '无法读取响应体。';
+      }
+      const errorMessage = `AI [${providerName}] 请求失败! 
+          请求目标URL: ${apiUrl}
+          状态码 (Status Code): ${resp.status} ${resp.statusText}
+          响应体 (Response Body): ${errorBody}
+      `;
+      throw new Error(errorMessage);
+  }
 
   const data = await resp.json();
   return data.choices?.[0]?.message?.content || null;
