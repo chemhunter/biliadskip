@@ -154,7 +154,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   const aliyunConfigString = Deno.env.get("ALIYUN");
 
   if (aliyunConfigString) {
-      log('检测到 ALIYUN 环境变量，优先使用...');
+      console.log('检测到 ALIYUN 环境变量，优先使用...');
       try {
           const aliyunConfig = JSON.parse(aliyunConfigString);
           if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
@@ -165,7 +165,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
               selectedModel = aliyunConfig.model[randomIndex];
               
               providerName = `Aliyun (${selectedModel})`; // 更新提供商名称用于日志
-              log(`✅ 已从阿里云配置中加载，随机选择模型: ${selectedModel}`);
+              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${selectedModel}`);
           } else {
               throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
           }
@@ -176,7 +176,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   }
 
   if (!apiUrl) {
-      log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
+      console.log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
       apiUrl = Deno.env.get('AI_API_URL');
       apiKey = Deno.env.get('AI_API_KEY');
       selectedModel = 'moonshot-v1-8k';
