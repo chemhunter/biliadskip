@@ -143,49 +143,48 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     分析以下视频字幕内容：\n
     ${subtitlesText}\n
     以下是可能包含线索的评论区文本，供你参考：
-    ${commentText}
-    `
-    // --- 1. 核心修改：配置源的动态决策 ---
-    let apiUrl;
-    let apiKey;
-    let selectedModel;
-    let providerName = 'Default Kimi';
+    ${commentText}`
+  
+  // --- 1. 核心修改：配置源的动态决策 ---
+  let apiUrl;
+  let apiKey;
+  let selectedModel;
+  let providerName = 'Default Kimi';
 
-    const aliyunConfigString = Deno.env.get("ALIYUN");
+  const aliyunConfigString = Deno.env.get("ALIYUN");
 
-    if (aliyunConfigString) {
-        log('检测到 ALIYUN 环境变量，优先使用...');
-        try {
-            const aliyunConfig = JSON.parse(aliyunConfigString);
-            if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
-                apiUrl = aliyunConfig.apiUrl;
-                apiKey = aliyunConfig.apikey;
-                
-                const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
-                selectedModel = aliyunConfig.model[randomIndex];
-                
-                providerName = `Aliyun (${selectedModel})`; // 更新提供商名称用于日志
-                log(`✅ 已从阿里云配置中加载，随机选择模型: ${selectedModel}`);
-            } else {
-                throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
-            }
-        } catch (e) {
-            console.error("❌ 解析ALIYUN环境变量失败！将回退到默认配置。", e);
-            apiUrl = null; 
-        }
-    }
+  if (aliyunConfigString) {
+      log('检测到 ALIYUN 环境变量，优先使用...');
+      try {
+          const aliyunConfig = JSON.parse(aliyunConfigString);
+          if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
+              apiUrl = aliyunConfig.apiUrl;
+              apiKey = aliyunConfig.apikey;
+              
+              const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
+              selectedModel = aliyunConfig.model[randomIndex];
+              
+              providerName = `Aliyun (${selectedModel})`; // 更新提供商名称用于日志
+              log(`✅ 已从阿里云配置中加载，随机选择模型: ${selectedModel}`);
+          } else {
+              throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
+          }
+      } catch (e) {
+          console.error("❌ 解析ALIYUN环境变量失败！将回退到默认配置。", e);
+          apiUrl = null; 
+      }
+  }
 
-    if (!apiUrl) {
-        log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
-        apiUrl = Deno.env.get('AI_API_URL');
-        apiKey = Deno.env.get('AI_API_KEY');
-        selectedModel = 'moonshot-v1-8k';
-    }
-    
-    if (!apiUrl || !apiKey) {
-        throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
-    }
-
+  if (!apiUrl) {
+      log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
+      apiUrl = Deno.env.get('AI_API_URL');
+      apiKey = Deno.env.get('AI_API_KEY');
+      selectedModel = 'moonshot-v1-8k';
+  }
+  
+  if (!apiUrl || !apiKey) {
+      throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
+  }
 
   const reqBody = {
     model: selectedModel,
