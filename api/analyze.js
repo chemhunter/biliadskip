@@ -193,6 +193,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
         { role: 'user', content: user_prompt },
     ],
     temperature: 0.3,
+    enable_thinking: false,
     max_tokens: 100,
   };
 
