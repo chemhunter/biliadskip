@@ -47,3 +47,6 @@ live.bilibili.com##.w-100.over-hidden.p-relative.flip-view
 live.bilibili.com##.购物
 live.bilibili.com##.帮我玩
 live.bilibili.com##.互动玩法
+
+!主页大屏
+www.bilibili.com##.recommended-swipe __web-inspector-hide-shortcut__
