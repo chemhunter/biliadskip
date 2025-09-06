@@ -118,7 +118,7 @@ async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }
     }
 }
 */
-
+let aiModelName
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitlesText, commentText ='') {
   const system_prompt = `
@@ -182,6 +182,8 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
       selectedModel = 'moonshot-v1-8k';
   }
   
+  aiModelName = selectedModel;
+  
   if (!apiUrl || !apiKey) {
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
@@ -194,7 +196,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     ],
     temperature: 0.3,
     enable_thinking: false,
-    max_tokens: 100,
+    max_tokens: 200,
   };
 
   const resp = await fetch(apiUrl, {
@@ -280,9 +282,10 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
           success: true, 
           timestamp_Obj: {
               start: aiResultJson.start,
-              end: aiResultJson.end
-          },
-          product: aiResultJson.product // (可选) 也可以将产品名称返回
+              end: aiResultJson.end,
+              source: aiModelName // 返回采用的随机模型名称
+          }
+          //product: aiResultJson.product // (可选) 也可以将产品名称返回
       };
   } else {
       return { status: 500, json: { error: 'AI返回的JSON内容无效', raw: aiResultJson } };
