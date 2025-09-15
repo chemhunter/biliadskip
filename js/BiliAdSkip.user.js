@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name             BiliAdSkipper
-// @namespace    BiliAdSkipper
+// @name             BiliAdSkip
+// @namespace    BiliAdSkip
 // @description  通过提取AI字幕、弹幕提醒，获取广告时间戳，自动跳过广告时间段
 // @version      2.11
-// @author       BiliAdSkipper
+// @author       BiliAdSkip
 // @match        https://www.bilibili.com/video/*
 // @connect      www.gitlabip.xyz
 // @connect      hub.gitmirror.com
