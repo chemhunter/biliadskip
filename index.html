@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>BiliAdSkipper - 公共AI服务</title>
+	<title>BiliAdSkip - 公共AI服务</title>
 	<link rel="icon" href="https://ico.kucat.cn/get.php?url=www.bilibili.com"> 
 	<style>
 		body {
@@ -85,10 +85,10 @@
     <div class="main-wrapper" style="width: 100%; display: flex; justify-content: center; align-items: center; min-height: 280vh; padding: 20px 0;">
         <div class="module-group" style="max-width: 900px; width: 100%;">
 			<div class="container">
-				<h1>BiliAdSkipper 公共AI服务</h1>
-				<p>这是一个为 <a href="https://greasyfork.org/zh-CN/scripts/542541" target="_blank">油猴脚本 BiliAdSkipper </a> 提供支持的后台AI分析服务。</p>
+				<h1>BiliAdSkip 公共AI服务</h1>
+				<p>这是一个为 <a href="https://greasyfork.org/zh-CN/scripts/542541" target="_blank">油猴脚本 BiliAdSkip </a> 提供支持的后台AI分析服务。</p>
 				<p>此页面仅为状态展示页。服务接口位于 <code>/api/analyze</code>，并只接受来自脚本的POST请求。</p>
-				<p><a href="https://github.com/chemhunter/biliadskip" target="_blank">BiliAdSkipper</a> 是一个社区化的免费公共服务，用来智能跳过网页端视频中广告部分。</p>
+				<p><a href="https://github.com/chemhunter/biliadskip" target="_blank">BiliAdSkip</a> 是一个社区化的免费公共服务，用来智能跳过网页端视频中广告部分。</p>
 				<p>人人共享，人人受益</p>
 				<p>服务状态: <span class="status">正常运行中</span></p>
 			</div>
@@ -98,11 +98,11 @@
 					<p>推荐使用微软Edge或者Chrome浏览器，在浏览器中安装 <a target="_blank" href="https://www.tampermonkey.net/"><b>Tampermonkey（篡改猴/油猴）插件</b></a>，其他管理器如<b>篡改猴测试版、暴力猴、脚本猫</b>亦可。若安装过则直接下一步。</p></li>
 				<li>开启运行脚本权限<br>
 					<p>新版(V138及以后)chrome浏览器中的油猴插件会有一个<b>“允许运行用户脚本”</b>的选项，必须开启，否则浏览器会阻止脚本运行。可参照下面的截图开启。Edge浏览器忽略该步。</p></li>
-				<li>安装该脚本BiliAdSkipper<br>
+				<li>安装该脚本BiliAdSkip<br>
 					<p>在浏览器中打开下面任意脚本链接 ，即可自动跳转到安装界面：</p>
-					<p><a target="_blank" href="https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(主链接)</p>
-					<p><a target="_blank" href="https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)</p>
-					<p><a target="_blank" href="https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)</p>
+					<p><a target="_blank" href="https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js</a>(主链接)</p>
+					<p><a target="_blank" href="https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js</a>(镜像备份)</p>
+					<p><a target="_blank" href="https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js">https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js</a>(镜像备份)</p>
 				</li>
 				<li>完成安装<br>
 					<p>点击<b>“安装”</b>自动完成（若未跳转到安装界面，请继续下方手动安装步骤）。</li></p>
@@ -120,14 +120,14 @@
 					<img title="实用工具" src="https://s2.loli.net/2025/09/01/z1iyYa73sWOVb4C.png"></li><br>
 				<li>从URL安装
 					<p>在“<b>实用工具</b>”标签最下方的“<b>从URL安装</b>”处，输入链接，点击“<b>安装</b>”按钮并确认即可。</p>
-					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)。</p>
+					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js</span> (点击可复制)。</p>
 					<p>失败的话，同样可以试试镜像链接</p>
-					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)</p>
+					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkip.user.js</span> (点击可复制)</p>
 					<img title="从URL安装" src="https://s2.loli.net/2025/09/01/pZUjouyNKE2iQJI.png"></li><br>
 				<li>刷新B站网页，脚本即可自动生效。</li>
 			</div>
 			<footer>
-				由 BiliAdSkipper 社区提供支持
+				由 BiliAdSkip 社区提供支持
 			</footer>
 		</div>
 	</div>
@@ -149,3 +149,4 @@
 	</script>
 </body>
 </html>
+
