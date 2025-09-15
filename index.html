@@ -22,10 +22,28 @@
 			border-top-right-radius: 8px;
 			border-bottom: 1px solid #e9e9e9;
 		}
+		p {
+			font-size: 1.1em;
+			line-height: 1.6;
+			margin-bottom: 20px;
+			text-align: center;
+		}
 		.guide {
 			border-bottom-left-radius: 8px;
 			border-bottom-right-radius: 8px;
 			padding-top: 25px;
+		}
+		.guide li {
+			text-indent: 0;
+			margin: 0.5em 0;
+		}
+		.guide li p {
+			font-size: 1em;
+			text-indent: 2em;
+			display: block;
+			text-align: left;
+			line-height: 1.3;
+			margin-bottom: 0px;
 		}
 		h1 {
 			color: #00a1d6;
@@ -33,12 +51,7 @@
 			margin-bottom: 10px;
 			text-align: center;
 		}
-		p {
-			font-size: 1.1em;
-			line-height: 1.6;
-			margin-bottom: 20px;
-			text-align: center;
-		}
+
 		.status {
 			font-weight: bold;
 			color: #27ae60;
@@ -80,34 +93,37 @@
 				<p>服务状态: <span class="status">正常运行中</span></p>
 			</div>
 			<div class="guide">
-				<h3>油猴脚本安装教程（完整）</h3>
+				<h3>一、油猴脚本安装教程</h3>
 				<li>安装油猴脚本管理器<br>
-					推荐使用微软Edge或者Chrome浏览器，在浏览器中安装 <a target="_blank" href="https://www.tampermonkey.net/"><b>Tampermonkey（篡改猴/油猴）插件</b></a>，其他管理器如<b>篡改猴测试版、暴力猴、脚本猫</b>亦可。若安装过则直接下一步。</li>
+					<p>推荐使用微软Edge或者Chrome浏览器，在浏览器中安装 <a target="_blank" href="https://www.tampermonkey.net/"><b>Tampermonkey（篡改猴/油猴）插件</b></a>，其他管理器如<b>篡改猴测试版、暴力猴、脚本猫</b>亦可。若安装过则直接下一步。</p></li>
 				<li>开启运行脚本权限<br>
-					新版的chrome浏览器中的油猴插件会有一个<b>“允许运行用户脚本”</b>的选项，必须开启，否则浏览器会阻止脚本运行。可参照下面的截图开启。Edge浏览器忽略该步。</li>
+					<p>新版(V138及以后)chrome浏览器中的油猴插件会有一个<b>“允许运行用户脚本”</b>的选项，必须开启，否则浏览器会阻止脚本运行。可参照下面的截图开启。Edge浏览器忽略该步。</p></li>
 				<li>安装该脚本BiliAdSkipper<br>
-					在浏览器中打开下面任意脚本链接 ，即可自动跳转到安装界面。
-					<a target="_blank" href="https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(主链接)<br>
-					<a target="_blank" href="https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)
-					<a target="_blank" href="https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)
+					<p>在浏览器中打开下面任意脚本链接 ，即可自动跳转到安装界面：</p>
+					<p><a target="_blank" href="https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(主链接)</p>
+					<p><a target="_blank" href="https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)</p>
+					<p><a target="_blank" href="https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js">https://hub.gitmirror.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</a>(镜像备份)</p>
 				</li>
 				<li>完成安装<br>
-					点击<b>“安装”</b>自动完成（若未跳转到安装界面请继续下方手动安装步骤）。</li><br>
-				<h3>手动安装步骤</h3>
+					<p>点击<b>“安装”</b>自动完成（若未跳转到安装界面，请继续下方手动安装步骤）。</li></p>
+				<h3>二、手动安装步骤</h3>
 				<li>打开扩展管理界面，Edge浏览器 <a target="_blank" href="edge://extensions/">edge://extensions/</a> ，chrome浏览器 <a target="_blank" href="chrome://extensions/">chrome://extensions/</a>。<br>
-				找到“篡改猴”这个扩展，点击<b>“详情”</b>进入查看页面。<br>
-				<img title="扩展详情" src="https://s2.loli.net/2025/09/01/KzUBWdDxnJjOwL4.png"><br><br>
-				对于Chrome浏览器，需要开启权限，否则浏览器会阻止脚本运行。<br>
-				· V138之前：需要启用<b>“开发者模式”</b>; <br>
-				· V138及之后：需在扩展详情页中，启用<b>“允许运行用户脚本”</b>的开关。<br>
-				<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/05/CyVPU7oKT5qie2I.png"><br><br>
-				下方找到<b>“扩展程序选项”</b>，点击即可进入篡改猴的管理面板。<br>
-				<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/01/bwO2rFqeuUjhINW.png"><br><br>
-				点击右上角“<b>实用工具</b>”，<br>
-				<img title="实用工具" src="https://s2.loli.net/2025/09/01/z1iyYa73sWOVb4C.png"></li><br>
-				<li>在实用工具页面最下方的“<b>从URL安装</b>”处，输入链接，点击“安装”按钮并确认即可。 <span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)。<br>
-				失败的话，同样可以试试镜像链接<br>  <span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)<br>
-				<img title="从URL安装" src="https://s2.loli.net/2025/09/01/pZUjouyNKE2iQJI.png"></li><br>
+					<p>1、找到“篡改猴”这个扩展，点击<b>“详情”</b>进入查看页面。<br>
+					<img title="扩展详情" src="https://s2.loli.net/2025/09/01/KzUBWdDxnJjOwL4.png"><br>
+					<p>2、对于Chrome浏览器，需要开启权限，否则浏览器会阻止脚本运行。</p>
+					<p>· V138之前：需要启用<b>“开发者模式”</b>; <br>
+					<p>· V138及之后：需在扩展详情页中，启用<b>“允许运行用户脚本”</b>的开关。</p>
+					<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/05/CyVPU7oKT5qie2I.png"><br><br>
+					<p>3、下方找到<b>“扩展程序选项”</b>，点击即可进入篡改猴的管理面板。</p>
+					<img title="允许运行用户脚本" src="https://s2.loli.net/2025/09/01/bwO2rFqeuUjhINW.png"><br><br>
+					<p>4、点击右上角“<b>实用工具</b>”，</p>
+					<img title="实用工具" src="https://s2.loli.net/2025/09/01/z1iyYa73sWOVb4C.png"></li><br>
+				<li>从URL安装
+					<p>在“<b>实用工具</b>”标签最下方的“<b>从URL安装</b>”处，输入链接，点击“<b>安装</b>”按钮并确认即可。</p>
+					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://github.com/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)。</p>
+					<p>失败的话，同样可以试试镜像链接</p>
+					<p><span class="loc copy" title="点击复制" onclick="copy(this.innerText)">https://www.gitlabip.xyz/chemhunter/biliadskip/raw/main/js/BiliAdSkipper.user.js</span> (点击可复制)</p>
+					<img title="从URL安装" src="https://s2.loli.net/2025/09/01/pZUjouyNKE2iQJI.png"></li><br>
 				<li>刷新B站网页，脚本即可自动生效。</li>
 			</div>
 			<footer>
@@ -133,6 +149,3 @@
 	</script>
 </body>
 </html>
-
-
-
