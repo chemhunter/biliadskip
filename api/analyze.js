@@ -27,8 +27,7 @@ function decodeBV(bv) {
 async function queryBvCallAi(bvNumber) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
   const headers = {
-    apikey: process.env.SUPABASE_API_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
   };
   const resp = await fetch(url, { headers });
   return resp.ok ? await resp.json() : null;
@@ -37,8 +36,7 @@ async function queryBvCallAi(bvNumber) {
 async function updateBvCallTimes(bvNumber, newTimes) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
   const headers = {
-    apikey: process.env.SUPABASE_API_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
   };
   const resp = await fetch(url, {
@@ -52,8 +50,7 @@ async function updateBvCallTimes(bvNumber, newTimes) {
 async function insertBvCall(bvNumber) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls`;
   const headers = {
-    apikey: process.env.SUPABASE_API_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
   };
   const resp = await fetch(url, {
@@ -82,8 +79,7 @@ async function checkAndUpdateBVCall(bvNumber) {
 async function checkEnoughRecords(bvNumber) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps_public?bv=eq.${bvNumber}`;
   const headers = {
-    apikey: process.env.SUPABASE_API_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_API_KEY}`,
+    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
   };
   const resp = await fetch(url, { headers });
   if (!resp.ok) return false;
