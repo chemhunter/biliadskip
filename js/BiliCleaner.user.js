@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      1.33
+// @version      1.34
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -17,6 +17,8 @@
 // @license      GPL-3.0 License
 // @run-at       document-end
 // @noframes
+// @downloadURL https://update.greasyfork.org/scripts/511437/BiliCleaner.user.js
+// @updateURL https://update.greasyfork.org/scripts/511437/BiliCleaner.meta.js
 // ==/UserScript==
 
 (function() {
@@ -24,7 +26,7 @@
 
     // --- 新增：声明全局变量 ---
     let keywordRegex, keywordRegexGlobal, biliAdWordsConfig, whiteList, messageDiv;
-    let commentAppObserver, dynamicPanelObserver, panelCardObserver;
+    let commentAppObserver, dynamicPanelObserver, panelCardObserver, setupIntervalId;
     let lastPathname = '';
     let hiddenAdCount = 0;
     let lastActiveUpName = null;
@@ -511,6 +513,7 @@
     }
 
     function watchDynamicAllPanel() {
+        if (setupIntervalId) clearInterval(setupIntervalId);
         const containerObserver = new MutationObserver(mutations => {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
@@ -548,11 +551,34 @@
             }
         });
 
-        const rightEntry = document.querySelector('.right-entry');
-        if (rightEntry) {
-            containerObserver.observe(rightEntry, { childList: true, subtree: true });
-            log('✅ 已启动动态弹窗的外部观察器');
-        }
+        let attemptCount = 0;
+        const maxAttempts = 20;
+        log('⏳ 开始尝试查找“动态”按钮容器...');
+        setupIntervalId = setInterval(() => {
+            const allRightEntryItems = document.querySelectorAll('.right-entry > li.v-popover-wrap');
+            let dynamicButtonContainer = null;
+            for (const item of allRightEntryItems) {
+                const link = item.querySelector('a[href*="t.bilibili.com"]');
+                const textSpan = item.querySelector('.right-entry-text');
+                if (link && textSpan && textSpan.textContent.trim() === '动态') {
+                    dynamicButtonContainer = item;
+                    break;
+                }
+            }
+            if (dynamicButtonContainer) {
+                clearInterval(setupIntervalId);
+                setupIntervalId = null;
+                containerObserver.observe(dynamicButtonContainer, { childList: true, subtree: true });
+                log('✅ 设定“动态”观察器');
+            } else {
+                attemptCount++;
+                if (attemptCount >= maxAttempts) {
+                    clearInterval(setupIntervalId);
+                    setupIntervalId = null;
+                    console.warn(`[BiliCleaner] 查找“动态”按钮容器超时 ，观察器未能启动`);
+                }
+            }
+        }, 500);
     }
 
     function debounce(func, wait) {
