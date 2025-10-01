@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      1.32
+// @version      1.33
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -498,7 +498,7 @@
 
     /** 过滤单个动态卡片链接 */
     function filterSingleDynamicLink(linkElement) {
-        if (!isVisible(linkElement)) return;
+        //if (!isVisible(linkElement)) return;
         const title = linkElement.getAttribute('title') || '';
         const tagSpan = linkElement.querySelector('.all-in-one-article-title > .article-tag');
         const isArticle = tagSpan && tagSpan.textContent.trim() === '专栏';
