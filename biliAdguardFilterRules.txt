@@ -2,7 +2,8 @@ message.bilibili.com##.helper-btn
 
 search.bilibili.com##.vip-wrap
 
-t.bilibili.com##.bili-dyn-banner
+!t.bilibili.com##.bili-dyn-banner
+t.bilibili.com##aside.right > section:has(.bili-dyn-banner)
 t.bilibili.com##.van-popover__reference.mini-vip
 t.bilibili.com##.loc-mc-box
 t.bilibili.com##.topic-panel
