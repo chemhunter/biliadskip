@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      1.34
+// @version      1.35
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -384,43 +384,33 @@
                         return;
                     }
 
-                    const goods = item.querySelector('bili-dyn-card-goods') || item.querySelector('dyn-goods');
-                    if (goods) {
+                    function isAdItem(item) {
+                        return item.querySelector('bili-dyn-card-goods, dyn-goods');
+                    }
+
+                    function isChargeItem(item) {
+                        if (item.querySelector('.dyn-blocked-mask, .bili-dyn-upower-common, .dyn-icon-badge__renderimg.bili-dyn-item__iconbadge')) return true;
+                        const badge = item.querySelector('.bili-dyn-card-video__badge');
+                        if (badge && /专属|抢先看/.test(badge.textContent)) return true;
+                        const lotteryTitle = item.querySelector('.dyn-upower-lottery__title');
+                        if (lotteryTitle && lotteryTitle.textContent.includes('专属')) return true;
+                        return false;
+                    }
+
+                    if (isAdItem(item)) {
                         hideItem(item);
-                        log('广告卡片 +1')
+                        log('广告卡片 +1');
                         hiddenAdCount++;
                         return;
                     }
 
-                    let charge = null;
-                    const blockedmask = item.querySelector('.dyn-blocked-mask');
-                    if (blockedmask) {
-                        charge = true;
-                    } else {
-                        const badge = item.querySelector('.bili-dyn-card-video__badge');
-                        if (badge && (badge.textContent.includes('专属') || badge.textContent.includes('抢先看'))) {
-                            charge = true;
-                        } else {
-                            const lotteryTitle = item.querySelector('.dyn-upower-lottery__title');
-                            if (lotteryTitle && lotteryTitle.textContent.includes('专属')) {
-                                charge = true;
-                            } else {
-                                const upower = item.querySelector(".bili-dyn-upower-common");
-                                const ask = item.querySelector('.dyn-icon-badge__renderimg.bili-dyn-item__iconbadge');
-                                if (ask || upower) {
-                                    charge = true;
-                                }
-                            }
-                        }
-                    }
-
-                    if (charge) {
+                    if (isChargeItem(item)) {
                         const titleElement = item.querySelector('.bili-dyn-card-video__title');
                         if (titleElement) {
                             const videoTitle = titleElement.textContent.trim();
                             log(`充电专属 +1: \n ----->"${videoTitle}"`);
                         } else {
-                            log('充电专属 +1');
+                            log(`充电专属 +1`);
                         }
                         hideItem(item);
                         hiddenChargeCount++;
@@ -520,7 +510,7 @@
                     if (node.nodeType !== 1) continue;
                     const panel = node.matches('.dynamic-all') ? node : node.querySelector('.dynamic-all');
                     if (panel) {
-                        log('✅ .dynamic-all 面板已插入，启动内部卡片观察器');
+                        log('✅ dynamic-all 面板已插入');
                         panel.querySelectorAll('a[data-mod="top_right_bar_window_dynamic"]').forEach(filterSingleDynamicLink);
                         if (panelCardObserver) panelCardObserver.disconnect();
                         panelCardObserver = new MutationObserver(cardMutations => {
@@ -542,7 +532,7 @@
                 for (const node of mutation.removedNodes) {
                     if (node.nodeType !== 1) continue;
                     if ((node.matches('.dynamic-all') || node.querySelector('.dynamic-all')) && panelCardObserver) {
-                        log('⚪️ .dynamic-all 面板已移除，断开内部卡片观察器');
+                        log('⚪️ dynamic-all 面板已移除');
                         panelCardObserver.disconnect();
                         panelCardObserver = null;
                         break;
@@ -553,7 +543,7 @@
 
         let attemptCount = 0;
         const maxAttempts = 20;
-        log('⏳ 开始尝试查找“动态”按钮容器...');
+        log('⏳ 查找“动态”按钮容器...');
         setupIntervalId = setInterval(() => {
             const allRightEntryItems = document.querySelectorAll('.right-entry > li.v-popover-wrap');
             let dynamicButtonContainer = null;
