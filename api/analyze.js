@@ -47,17 +47,6 @@ async function preflightCheckWithSupabase(bvNumber) {
     return await response.json(); // 返回 { allowed, reason }
 }
 
-async function checkEnoughRecords(bvNumber) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bili_ad_timestamps_public?bv=eq.${bvNumber}`;
-  const headers = {
-    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-  };
-  const resp = await fetch(url, { headers });
-  if (!resp.ok) return false;
-  const data = await resp.json();
-  return data.length >= 5;
-}
-
 /* 移除该逻辑
 async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }) {
     const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
@@ -206,10 +195,12 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
     return { status: 400, json: { error: 'BV号无效' } };
   }
 
-  if (await checkEnoughRecords(bv)) {
-    return { status: 200, json: { success: true, message: '记录已足够，无需再次调用AI' } };
+  const { allowed, reason } = await preflightCheckWithSupabase(bv);
+  if (!allowed) {
+      console.log(`BV ${bv} 的请求被预检拒绝: ${reason}`);
+      return { status: 429, json: { success: false, aiResult: null, error: reason || '请求被拒绝' } };
   }
-
+  
     // --- 1. 核心安全加固：对 subtitles 总长度进行校验 ---
   const MAX_SUBTITLES_LENGTH = 6000; // 设置最大总长度为 6000 字符
   const subtitlesText = subtitles.join('\n');
@@ -218,11 +209,7 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
       return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
   }
 
-  const { allowed, reason } = await preflightCheckWithSupabase(bv);
-    if (!allowed) {
-      console.log(`Request for BV ${bv} rejected by preflight check: ${reason}`);
-      return res.status(429).json({ success: false, error: reason || '请求被拒绝' });
-  }
+
 
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
   const aiRespText = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
