@@ -24,81 +24,27 @@ function decodeBV(bv) {
 }
 
 // ----------- Supabase 操作函数 -----------
-async function queryBvCallAi(bvNumber) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
-  const headers = {
-    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-  };
-  const resp = await fetch(url, { headers });
-  return resp.ok ? await resp.json() : null;
-}
+async function preflightCheckWithSupabase(bvNumber) {
+    // 从 Vercel 的环境变量中获取 URL 和 anon key
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const functionUrl = 'https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/bv_calls'; // 这是您新创建的 Supabase 函数
+    const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+            'apikey': supabaseAnonKey,
+            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ bv: bvNumber }),
+    });
 
-// 在 /api/analyze.js 中
-
-async function updateBvCallTimes(bvNumber, newTimes) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
-  const headers = {
-    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json',
-  };
-  const resp = await fetch(url, {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify({ call_times: newTimes }),
-  });
-
-  console.log('updateBvCallTimes', resp);
-  // 【核心诊断代码】
-  if (!resp.ok) {
-      console.error('--- UPDATE 失败 ---');
-      console.error('Status:', resp.status, resp.statusText);
-      const errorBody = await resp.text();
-      console.error('Response Body:', errorBody);
-  }
-
-  return resp.ok;
-}
-
-// 在 /api/analyze.js 中
-async function insertBvCall(bvNumber) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls`;
-  const headers = {
-    'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json',
-    // 【建议添加】明确告知 Supabase 我们需要返回插入的数据体
-    'Prefer': 'return=representation' 
-  };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ bv: bvNumber, call_times: 1 }),
-  });
-  
-  console.log('insertBvCall', resp);
-  // 【核心诊断代码】
-  if (!resp.ok) {
-      console.error('--- INSERT 失败 ---');
-      console.error('Status:', resp.status, resp.statusText);
-      const errorBody = await resp.text(); // 使用 .text() 以防返回的不是JSON
-      console.error('Response Body:', errorBody);
-  }
-  
-  return resp.ok;
-}
-
-async function checkAndUpdateBVCall(bvNumber) {
-  const data = await queryBvCallAi(bvNumber);
-  if (data && data.length > 0) {
-    if (data[0].call_times >= 2) {
-      return { allowed: false, reason: '该BV号已超出调用次数限制' };
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Supabase preflight check failed with status ${response.status}:`, errorText);
+        throw new Error('Supabase preflight check failed.');
     }
-    const updated = await updateBvCallTimes(bvNumber, data[0].call_times + 1);
-    if (!updated) throw new Error('更新调用次数失败');
-  } else {
-    const inserted = await insertBvCall(bvNumber);
-    if (!inserted) throw new Error('插入调用记录失败');
-  }
-  return { allowed: true };
+
+    return await response.json(); // 返回 { allowed, reason }
 }
 
 async function checkEnoughRecords(bvNumber) {
@@ -271,10 +217,11 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
       console.warn(`[安全警告] 来自IP [${ip}] 的请求因字幕过长 (${subtitlesText.length} > ${MAX_SUBTITLES_LENGTH}) 而被拒绝。BV: ${bv}`);
       return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
   }
-  
-  const check = await checkAndUpdateBVCall(bv);
-  if (!check.allowed) {
-    return { status: 403, json: { error: check.reason } };
+
+  const { allowed, reason } = await preflightCheckWithSupabase(bv);
+    if (!allowed) {
+      console.log(`Request for BV ${bv} rejected by preflight check: ${reason}`);
+      return res.status(429).json({ success: false, error: reason || '请求被拒绝' });
   }
 
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
