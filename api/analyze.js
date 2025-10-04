@@ -23,9 +23,11 @@ function decodeBV(bv) {
   return (r - add) ^ xor;
 }
 
+// ----------- Supabase 操作函数 -----------
 async function preflightCheckWithSupabase(bvNumber) {
+    // 从 Vercel 的环境变量中获取 URL 和 anon key
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-    const functionUrl = 'https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/bv_calls';
+    const functionUrl = 'https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/bv_calls'; // 这是您新创建的 Supabase 函数
     const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
@@ -33,7 +35,7 @@ async function preflightCheckWithSupabase(bvNumber) {
             'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({bv: bvNumber}),
+        body: JSON.stringify({ bv: bvNumber }),
     });
 
     if (!response.ok) {
@@ -101,11 +103,12 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     ${commentText}`
   
   // --- 1. 核心修改：配置源的动态决策 ---
-  let apiUrl;
-  let apiKey;
-  let selectedModel;
-  let providerName = 'Default Kimi';
-
+  const AI_CONFIG = {
+    apiUrl: null,
+    apiKey: null,
+    selectedModel: null,
+    providerName = 'Kimi'
+  }
   const aliyunConfigString = process.env.ALIYUN;
 
   if (aliyunConfigString) {
@@ -113,52 +116,53 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
       try {
           const aliyunConfig = JSON.parse(aliyunConfigString);
           if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
-              apiUrl = aliyunConfig.apiUrl;
-              apiKey = aliyunConfig.apikey;
+              AI_CONFIG.apiUrl = aliyunConfig.apiUrl;
+              AI_CONFIG.apiKey = aliyunConfig.apikey;
               
               const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
-               = aliyunConfig.model[randomIndex];
+              AI_CONFIG.selectedModel = aliyunConfig.model[randomIndex];
               
-              providerName = `Aliyun (${})`; // 更新提供商名称用于日志
-              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${}`);
+              AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.selectedModel})`; // 更新提供商名称用于日志
+              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${AI_CONFIG.selectedModel}`);
           } else {
               throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
           }
       } catch (e) {
           console.error("❌ 解析ALIYUN环境变量失败！将回退到默认配置。", e);
-          apiUrl = null; 
+          AI_CONFIG.apiUrl = null; 
       }
   }
 
-  if (!apiUrl) {
+  if (!AI_CONFIG.apiUrl) {
       console.log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
-      apiUrl = process.env.AI_API_URL;
-      apiKey = process.env.AI_API_KEY;
-       = 'moonshot-v1-8k';
+      const kimiConfig = JSON.parse(process.env.KIMI);
+      AI_CONFIG.apiUrl = kimiConfig.apiUrl;
+      AI_CONFIG.apiKey = kimiConfig.apikey;
+      AI_CONFIG.selectedModel = 'moonshot-v1-8k';
   }
   
-  aiModelName = selectedModel;
+  aiModelName = AI_CONFIG.selectedModel;
   
-  if (!apiUrl || !apiKey) {
+  if (!AI_CONFIG.apiUrl || !AI_CONFIG.apiKey) {
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
 
   const reqBody = {
-    model: selectedModel,
+    model: AI_CONFIG.selectedModel,
     messages: [
-        {role: 'system', content: system_prompt},
-        {role: 'user', content: user_prompt},
+        { role: 'system', content: system_prompt },
+        { role: 'user', content: user_prompt },
     ],
-    temperature: 0.3,
+    temperature: 0.2,
     enable_thinking: false,
     max_tokens: 200,
   };
 
-  const resp = await fetch(apiUrl, {
+  const resp = await fetch(AI_CONFIG.apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
     },
     body: JSON.stringify(reqBody),
   });
@@ -171,8 +175,8 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
       } catch (e) {
           errorBody = '无法读取响应体。';
       }
-      const errorMessage = `AI [${providerName}] 请求失败! 
-          请求目标URL: ${apiUrl}
+      const errorMessage = `AI [${AI_CONFIG.providerName}] 请求失败! 
+          请求目标URL: ${AI_CONFIG.apiUrl}
           状态码 (Status Code): ${resp.status} ${resp.statusText}
           响应体 (Response Body): ${errorBody}
       `;
@@ -183,7 +187,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   const aiRespText = data.choices?.[0]?.message?.content;
   if (!aiRespText) {
     throw new Error("AI未返回有效内容。");
-    return {status: 500, json: {error: 'AI服务未返回任何内容'}};
+    return { status: 500, json: { error: 'AI服务未返回任何内容' } };
   }
 
   // 智能提取被 ```json ... ``` 包裹的内容
@@ -193,28 +197,28 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
       result = JSON.parse(jsonMatch[1] || jsonMatch[2]);
       return {
         ...result,
-        source: selectedModel
+        source: AI_CONFIG.selectedModel
       };
     } catch (e) {
       console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
-      return {status: 500, json: {error: 'AI返回的不是有效的JSON', raw: aiRespText}};
+      return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
   }
 }
 
 // ----------- 业务主流程 -----------
 async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) {
   if (!bv || !Array.isArray(subtitles) || subtitles.length === 0) {
-    return {status: 400, json: {error: '缺少必要字段'}};
+    return { status: 400, json: { error: '缺少必要字段' } };
   }
   const avNumber = decodeBV(bv);
   if (avNumber === null) {
-    return {status: 400, json: {error: 'BV号无效'}};
+    return { status: 400, json: { error: 'BV号无效' } };
   }
 
   const { allowed, reason } = await preflightCheckWithSupabase(bv);
   if (!allowed) {
       console.log(`BV ${bv} 的请求被预检拒绝: ${reason}`);
-      return {status: 429, json: {success: false, aiResult: null, error: reason || '请求被拒绝'}};
+      return { status: 429, json: { success: false, aiResult: null, error: reason || '请求被拒绝' } };
   }
   
     // --- 1. 核心安全加固：对 subtitles 总长度进行校验 ---
@@ -222,12 +226,7 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
   const subtitlesText = subtitles.join('\n');
   if (subtitlesText.length > MAX_SUBTITLES_LENGTH) {
       console.warn(`[安全警告] 来自IP [${ip}] 的请求因字幕过长 (${subtitlesText.length} > ${MAX_SUBTITLES_LENGTH}) 而被拒绝。BV: ${bv}`);
-      return new Response(
-        JSON.stringify(
-          {error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用`}
-        ), 
-        {status: 413, headers: corsHeaders}
-      ); // 413 Payload Too Large
+      return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
   }
 
 
@@ -259,10 +258,10 @@ module.exports = async function handler(req, res) {
   }
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   try {
-    const result = await processRequest({...req.body, ip});
+    const result = await processRequest({ ...req.body, ip });
     return res.status(result.status).json(result.json);
   } catch (err) {
     console.error('错误：', err);
-    return res.status(500).json({error: '服务器内部错误'});
+    return res.status(500).json({ error: '服务器内部错误' });
   }
 };
