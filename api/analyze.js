@@ -106,7 +106,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   const AI_CONFIG = {
     apiUrl: null,
     apiKey: null,
-    selectedModel: null,
+    model: null,
     providerName: 'Kimi'
   }
   const aliyunConfigString = process.env.ALIYUN;
@@ -120,10 +120,10 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
               AI_CONFIG.apiKey = aliyunConfig.apikey;
               
               const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
-              AI_CONFIG.selectedModel = aliyunConfig.model[randomIndex];
+              AI_CONFIG.model = aliyunConfig.model[randomIndex];
               
-              AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.selectedModel})`; // 更新提供商名称用于日志
-              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${AI_CONFIG.selectedModel}`);
+              AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.model})`; // 更新提供商名称用于日志
+              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${AI_CONFIG.model}`);
           } else {
               throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
           }
@@ -134,21 +134,21 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   }
 
   if (!AI_CONFIG.apiUrl) {
-      console.log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
+      console.log('...回退到使用默认的KIMI 配置');
       const kimiConfig = JSON.parse(process.env.KIMI);
       AI_CONFIG.apiUrl = kimiConfig.apiUrl;
       AI_CONFIG.apiKey = kimiConfig.apikey;
-      AI_CONFIG.selectedModel = 'moonshot-v1-8k';
+      AI_CONFIG.model = 'moonshot-v1-8k';
   }
   
-  aiModelName = AI_CONFIG.selectedModel;
+  aiModelName = AI_CONFIG.model;
   
   if (!AI_CONFIG.apiUrl || !AI_CONFIG.apiKey) {
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
 
   const reqBody = {
-    model: AI_CONFIG.selectedModel,
+    model: AI_CONFIG.model,
     messages: [
         { role: 'system', content: system_prompt },
         { role: 'user', content: user_prompt },
@@ -161,9 +161,9 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   const resp = await fetch(AI_CONFIG.apiUrl, {
     method: 'POST',
     headers: {
-      'apikey': AI_CONFIG.apiKey,
-      'Content-Type': 'application/json',
+      //'apikey': AI_CONFIG.apiKey,
       'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify(reqBody),
   });
@@ -191,14 +191,14 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     return { status: 500, json: { error: 'AI服务未返回任何内容' } };
   }
 
-  // 智能提取被 ```json ... ``` 包裹的内容
   try {
+      // 智能提取被 ```json ... ``` 包裹的内容
       const jsonMatch = aiRespText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
       if (!jsonMatch) throw new Error("AI回复中未找到有效的JSON代码块");
       result = JSON.parse(jsonMatch[1] || jsonMatch[2]);
       return {
         ...result,
-        source: AI_CONFIG.selectedModel
+        source: AI_CONFIG.model
       };
     } catch (e) {
       console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
@@ -222,7 +222,7 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
       return { status: 429, json: { success: false, aiResult: null, error: reason || '请求被拒绝' } };
   }
   
-    // --- 1. 核心安全加固：对 subtitles 总长度进行校验 ---
+  // 核心安全加固：对 subtitles 总长度进行校验 ---
   const MAX_SUBTITLES_LENGTH = 6000; // 设置最大总长度为 6000 字符
   const subtitlesText = subtitles.join('\n');
   if (subtitlesText.length > MAX_SUBTITLES_LENGTH) {
@@ -230,8 +230,7 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
       return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
   }
 
-
-  // 4. 【关键】无论结果如何，都将AI返回的【原始JSON】，包装后直接返回给客户端
+  // 无论结果如何，都将AI返回的【原始JSON】，包装后直接返回给客户端
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
   const aiResultJson = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
   if (typeof aiResultJson.noAd === 'boolean') {
