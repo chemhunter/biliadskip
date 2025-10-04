@@ -107,7 +107,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
     apiUrl: null,
     apiKey: null,
     selectedModel: null,
-    providerName = 'Kimi'
+    providerName: 'Kimi'
   }
   const aliyunConfigString = process.env.ALIYUN;
 
