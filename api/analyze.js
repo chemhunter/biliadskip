@@ -161,6 +161,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   const resp = await fetch(AI_CONFIG.apiUrl, {
     method: 'POST',
     headers: {
+      'apikey': AI_CONFIG.apiKey,
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
     },
