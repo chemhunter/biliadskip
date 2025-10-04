@@ -33,6 +33,8 @@ async function queryBvCallAi(bvNumber) {
   return resp.ok ? await resp.json() : null;
 }
 
+// 在 /api/analyze.js 中
+
 async function updateBvCallTimes(bvNumber, newTimes) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls?bv=eq.${bvNumber}`;
   const headers = {
@@ -44,20 +46,41 @@ async function updateBvCallTimes(bvNumber, newTimes) {
     headers,
     body: JSON.stringify({ call_times: newTimes }),
   });
+
+  // 【核心诊断代码】
+  if (!resp.ok) {
+      console.error('--- UPDATE 失败 ---');
+      console.error('Status:', resp.status, resp.statusText);
+      const errorBody = await resp.text();
+      console.error('Response Body:', errorBody);
+  }
+
   return resp.ok;
 }
 
+// 在 /api/analyze.js 中
 async function insertBvCall(bvNumber) {
   const url = `${process.env.SUPABASE_URL}/rest/v1/bv_calls`;
   const headers = {
     'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
+    // 【建议添加】明确告知 Supabase 我们需要返回插入的数据体
+    'Prefer': 'return=representation' 
   };
   const resp = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ bv: bvNumber, call_times: 1 }),
   });
+
+  // 【核心诊断代码】
+  if (!resp.ok) {
+      console.error('--- INSERT 失败 ---');
+      console.error('Status:', resp.status, resp.statusText);
+      const errorBody = await resp.text(); // 使用 .text() 以防返回的不是JSON
+      console.error('Response Body:', errorBody);
+  }
+  
   return resp.ok;
 }
 
