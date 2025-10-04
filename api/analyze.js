@@ -229,16 +229,10 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
 
 
   // 4. 【关键】无论结果如何，都将AI返回的【原始JSON】，包装后直接返回给客户端
-  const responseToClient = {
-    success: true,
-    aiResult: aiResultJson
-  };
-  
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
   const aiResultJson = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
-  let responseToClient;
   if (typeof aiResultJson.noAd === 'boolean') {
-      responseToClient = { 
+      const responseToClient = { 
           success: true, 
           aiResult: aiResultJson,
       };
