@@ -182,7 +182,25 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   }
 
   const data = await resp.json();
-  return data.choices?.[0]?.message?.content || null;
+  const aiRespText = data.choices?.[0]?.message?.content;
+  if (!aiRespText) {
+    throw new Error("AI未返回有效内容。");
+    return { status: 500, json: { error: 'AI服务未返回任何内容' } };
+  }
+
+  // 智能提取被 ```json ... ``` 包裹的内容
+  try {
+      const jsonMatch = aiRespText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
+      if (!jsonMatch) throw new Error("AI回复中未找到有效的JSON代码块");
+      result = JSON.parse(jsonMatch[1] || jsonMatch[2]);
+      return {
+        ...result,
+        source: selectedModel
+      };
+    } catch (e) {
+      console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
+      return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
+  }
 }
 
 // ----------- 业务主流程 -----------
@@ -210,44 +228,24 @@ async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) 
   }
 
 
-
+  // 4. 【关键】无论结果如何，都将AI返回的【原始JSON】，包装后直接返回给客户端
+  const responseToClient = {
+    success: true,
+    aiResult: aiResultJson
+  };
+  
   const sanitizedCommentText = (commentText || '').toString().slice(0, 50);
-  const aiRespText = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
-
-  if (!aiRespText) {
-      return { status: 500, json: { error: 'AI服务未返回任何内容' } };
-  }
-
-  let aiResultJson;
-  try {
-      let jsonString = aiRespText;
-      // 智能提取被 ```json ... ``` 包裹的内容
-      const jsonMatch = aiRespText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
-      if (!jsonMatch) throw new Error("AI回复中未找到有效的JSON代码块");
-      aiResultJson= JSON.parse(jsonMatch[1] || jsonMatch[2]);
-    } catch (e) {
-      console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
-      return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
-  }
-
+  const aiResultJson = await fetchAITimestamps(subtitlesText, sanitizedCommentText);
   let responseToClient;
-  if (aiResultJson.noAd === true) {
-      responseToClient = { success: true, timestamp_Obj: null, message: '无广告' };
-  } else if (aiResultJson.start && aiResultJson.end) {
+  if (typeof aiResultJson.noAd === 'boolean') {
       responseToClient = { 
           success: true, 
-          timestamp_Obj: {
-              start: aiResultJson.start,
-              end: aiResultJson.end,
-              source: aiModelName // 返回采用的随机模型名称
-          }
-          //product: aiResultJson.product // (可选) 也可以将产品名称返回
+          aiResult: aiResultJson,
       };
+      return {status: 200, json: responseToClient};
   } else {
-      return { status: 500, json: { error: 'AI返回的JSON内容无效', raw: aiResultJson } };
+      return {status: 500, json: { error: 'AI返回的JSON内容无效', raw: aiResultJson}};
   }
-
-  return { status: 200, json: responseToClient };
 }
 
 // ----------- 入口handler -----------
