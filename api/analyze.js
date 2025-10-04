@@ -119,7 +119,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
   let selectedModel;
   let providerName = 'Default Kimi';
 
-  const aliyunConfigString = Deno.env.get("ALIYUN");
+  const aliyunConfigString = process.env.get("ALIYUN");
 
   if (aliyunConfigString) {
       console.log('检测到 ALIYUN 环境变量，优先使用...');
@@ -145,8 +145,8 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
 
   if (!apiUrl) {
       console.log('...回退到使用默认的 AI_API_URL 和 AI_API_KEY 配置。');
-      apiUrl = Deno.env.get('AI_API_URL');
-      apiKey = Deno.env.get('AI_API_KEY');
+      apiUrl = process.env.get('AI_API_URL');
+      apiKey = process.env.get('AI_API_KEY');
       selectedModel = 'moonshot-v1-8k';
   }
   
