@@ -47,6 +47,7 @@ async function updateBvCallTimes(bvNumber, newTimes) {
     body: JSON.stringify({ call_times: newTimes }),
   });
 
+  console.log('updateBvCallTimes', resp);
   // 【核心诊断代码】
   if (!resp.ok) {
       console.error('--- UPDATE 失败 ---');
@@ -72,7 +73,8 @@ async function insertBvCall(bvNumber) {
     headers,
     body: JSON.stringify({ bv: bvNumber, call_times: 1 }),
   });
-
+  
+  console.log('insertBvCall', resp);
   // 【核心诊断代码】
   if (!resp.ok) {
       console.error('--- INSERT 失败 ---');
