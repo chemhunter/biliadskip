@@ -8,6 +8,7 @@ t.bilibili.com##.van-popover__reference.mini-vip
 t.bilibili.com##.loc-mc-box
 t.bilibili.com##.topic-panel
 
+bilibili.com##li.v-popover-wrap:has-text(会员购)
 bilibili.com##.van-popover__reference.download-client-trigger.link
 bilibili.com##.loc-moveclip.loc-entry
 bilibili.com##.part-1.pop-live-small-mode
