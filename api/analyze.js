@@ -48,10 +48,10 @@ async function preflightCheckWithSupabase(bvNumber) {
 }
 
 /* 移除该逻辑
-async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, UP_id }) {
+async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, up_id }) {
     const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
     const headers = {'Content-Type': 'application/json'};
-    const body = {bv, timestamp_range, source, user_id, UP_id};
+    const body = {bv, timestamp_range, source, user_id, up_id};
     try {
         const resp = await fetch(url, {
             method: 'POST',
@@ -88,13 +88,13 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
      - "noAd": 一个布尔值，如果确定无广告则为 true，否则为 false。
      - "product": 广告中推广的商品或服务名称。如果无广告，则为 null。
 
-  判断规则：
+   判断规则：
     1. 你的回复【必须】是一个合法的、可以被JSON.parse()解析的JSON对象。
     2. 不要回复任何JSON对象之外的额外文字、解释或注释。
     3. 如果在字幕中找到明确的商业推广，请填写 "start", "end", "product" 字段，并将 "noAd" 设为 false。
     4. 如果在仔细分析后，确定字幕中【没有】任何商业推广，返回{"start": null, "end": null, "product": null, "noAd": true}。
-    5. 商业广告一般不低于30s，将偏离视频主题、有意引入广告的先导部分也视做广告区间。
-    6. 将最后一条广告字幕接下来的下一条正常字幕的时间减去1s作为"end"时间戳。
+    5. 商业推广广告一般不低于30s，不会涉及军用装备，将偏离视频主题、有意引入广告的先导部分也视做广告区间。
+    6. 取最后一条广告字幕的时间戳与接下来的一条正常字幕的时间戳，将两者取平均值（向下取整）作为"end"时间戳。
 `
   const user_prompt = `
     分析以下视频字幕内容：\n
@@ -207,7 +207,7 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
 }
 
 // ----------- 业务主流程 -----------
-async function processRequest({bv, subtitles, user_id, UP_id, ip, commentText}) {
+async function processRequest({bv, subtitles, user_id, up_id, ip, commentText}) {
   if (!bv || !Array.isArray(subtitles) || subtitles.length === 0) {
     return { status: 400, json: { error: '缺少必要字段' } };
   }
