@@ -15,6 +15,7 @@
 // @match        https://www.bilibili.com/festival/*
 // @match        https://space.bilibili.com/*
 // @match        https://t.bilibili.com/*
+// @match        https://live.bilibili.com/*
 // @icon         https://www.bilibili.com/favicon.ico
 // @grant        none
 // @run-at       document-start
@@ -42,8 +43,8 @@
     const gState = {
         originalFetch: null,
         isFetchHooked: false,
-        isAppendHooked: false,
-        isReloadHooked: false
+        //isAppendHooked: false,
+        //isReloadHooked: false
     };
 
     // --- 核心功能：Fetch 拦截 ---
@@ -120,7 +121,7 @@
         if (locationRaw && typeof locationRaw === 'string') {
             const ipLocation = locationRaw.replace(/IP属地：/ig, "").trim();
             if (ipLocation) {
-                const ipText = `　<${ipLocation}>`;
+                const ipText = ` <${ipLocation}>`;
                 comment.member.uname += ipText;
             }
         }
