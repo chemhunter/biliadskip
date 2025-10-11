@@ -17,8 +17,8 @@
 // @match        https://t.bilibili.com/*
 // @match        https://live.bilibili.com/*
 // @icon         https://www.bilibili.com/favicon.ico
-// @updateURL    https://cdn.jsdelivr.net/gh/chemhunter/biliadskip/@main/js/BiliCommentIP.user.js 
-// @downloadURL  https://cdn.jsdelivr.net/gh/chemhunter/biliadskip/@main/js/BiliCommentIP.user.js 
+// @updateURL    https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js 
+// @downloadURL  https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js 
 // @grant        none
 // @license    GPL-3.0-only
 // @run-at       document-start
