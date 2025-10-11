@@ -2,7 +2,7 @@
 // @name         Bilibili Comment IP Display
 // @name:zh     B站评论区显示归属地
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
+// @version      3.0.2
 // @description  Displays IP location in the Bilibili comment section by intercepting API responses.
 // @description:zh-CN    B站网页端各个页面评论区显示用户IP归属地
 // @author        xxapk & 蓝色空間前进四
@@ -17,7 +17,10 @@
 // @match        https://t.bilibili.com/*
 // @match        https://live.bilibili.com/*
 // @icon         https://www.bilibili.com/favicon.ico
+// @updateURL    https://cdn.jsdelivr.net/gh/chemhunter/biliadskip/raw/main/js/BiliCommentIP.user.js 
+// @downloadURL  https://cdn.jsdelivr.net/gh/chemhunter/biliadskip/raw/main/js/BiliCommentIP.user.js 
 // @grant        none
+// @license    GPL-3.0-only
 // @run-at       document-start
 // ==/UserScript==
 
@@ -60,8 +63,10 @@
 
         window.fetch = function(url, options) {
             const fetchPromise = origin(url, options);
-            const isMainCommentAPI = url && typeof url === 'string' && url.includes("reply/wbi/main");
-            const isSubCommentAPI = url && typeof url === 'string' && url.includes("/reply/reply?") && url.includes("&root=");
+            if (!url || typeof url !== 'string') { return fetchPromise };
+
+            const isMainCommentAPI = url.includes("reply/wbi/main");
+            const isSubCommentAPI = url.includes("/reply/reply?") && url.includes("&root=");
             if (isMainCommentAPI || isSubCommentAPI) {
                 console.log(`[${SCRIPT_NAME}] Intercepted ${isMainCommentAPI ? 'Main' : 'Sub'} Comment API:`, url.substring(0, 100));
 
