@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      1.35
+// @version      1.36
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -129,7 +129,7 @@
         // 分组规则：按页面类型
         const rules = {
             common: [
-                'li.v-popover-wrap.left-loc-entry', //上方导航条末尾广告
+                'li.v-popover-wrap.left-loc-entry', //上方导航条末尾，可能是广告/节日/专题
                 'ul.left-entry > li.v-popover-wrap:last-child', // 上方导航条最后的“下载客户端”
                 'ul.right-entry > .vip-wrap', //顶部右侧 大会员按钮
             ],
@@ -146,6 +146,7 @@
             dynamic: [
                 'bili-dyn-home--member .right',
                 '.bili-dyn-banner', //动态右侧社区公告
+                //'aside.right > section > .bili-dyn-banner',
                 //'.bili-dyn-search-trendings',//动态右侧热搜，毫无营养
                 '.reply-notice', //动态页面评论区上方提醒条
                 ".bili-dyn-version-control__reminding", //动态页面新版导航提醒
@@ -154,8 +155,11 @@
                 "gift-control-vm", //直播界面下方送礼栏
                 ".gift-control-section", //直播界面下方送礼栏
                 '.room-info-ctnr', //直播界面下面推荐直播4x2
-                "rank-list-vm", //直播界面上方榜单
-                ".rank-list-section", //直播界面上方榜单
+                '.gift-menu-root', //直播窗口内礼物列表
+                'rank-list-vm', //直播界面上方榜单
+                '.rank-list-section', //直播界面上方榜单
+                'rank-list-ctnr-box .tab-content.ts-dot-2',
+                '.app-body .player-and-aside-area .aside-area .chat-history-panel .chat-items .chat-item.gift-item', //直播聊天栏礼物
             ]
         };
 
@@ -172,6 +176,22 @@
             selectorsToApply.push(...rules.dynamic);
         } else if (isLivePage) {
             selectorsToApply.push(...rules.live);
+            /*
+            const parentElement = document.getElementById('rank-list-vm');
+            const childElement = document.getElementById('rank-list-ctnr-box');
+            const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
+            if ( scrollbarHeight ) scrollbarHeight.style.height = '432px';
+
+            if (parentElement && childElement) {
+                let height = parseFloat(window.getComputedStyle(childElement).height);
+                if (!parentElement.dataset.heightModified) {
+                    height = height / 3 - 1;
+                }
+                parentElement.style.height = `${height}px`;
+                childElement.style.height = `${height}px`;
+                parentElement.dataset.heightModified = 'true';
+            } 
+            */
         }
 
         for (const selector of selectorsToApply) {
@@ -389,7 +409,7 @@
                     }
 
                     function isChargeItem(item) {
-                        if (item.querySelector('.dyn-blocked-mask, .bili-dyn-upower-common, .dyn-icon-badge__renderimg.bili-dyn-item__iconbadge')) return true;
+                        if (item.querySelector('.dyn-blocked-mask, .bili-dyn-upower-common, .bili-dyn-upower-lottery, .dyn-icon-badge__renderimg.bili-dyn-item__iconbadge, .bili-dyn-card-common')) return true;
                         const badge = item.querySelector('.bili-dyn-card-video__badge');
                         if (badge && /专属|抢先看/.test(badge.textContent)) return true;
                         const lotteryTitle = item.querySelector('.dyn-upower-lottery__title');
@@ -420,7 +440,7 @@
                     // 辅助函数：在指定容器中检查广告并隐藏
                     function checkAndHideAd(container, type) {
                         const richtext = container.querySelector('.bili-rich-text .bili-rich-text__content')?.textContent?.trim();
-                        if ( richtext && richtext.length >= 40 ) {
+                        if ( richtext ) {
                             const foundAd = findAdwords(richtext);
                             if (foundAd) {
                                 log(`广告关键词 +1(${type}) \n ----> ${richtext.slice(0,30)}`);
@@ -458,6 +478,13 @@
                             return;
                         }
                     });
+
+                    const disabled = item.querySelector('.uncheck.disabled');
+                    if (disabled) {
+                        hideItem(item);
+                        log('过期预约');
+                        return;
+                    }
                 }
             });
             //视频页面
@@ -559,13 +586,13 @@
                 clearInterval(setupIntervalId);
                 setupIntervalId = null;
                 containerObserver.observe(dynamicButtonContainer, { childList: true, subtree: true });
-                log('✅ 设定“动态”观察器');
+                log('✅ 设定导航栏“动态”观察器');
             } else {
                 attemptCount++;
                 if (attemptCount >= maxAttempts) {
                     clearInterval(setupIntervalId);
                     setupIntervalId = null;
-                    console.warn(`[BiliCleaner] 查找“动态”按钮容器超时 ，观察器未能启动`);
+                    log(`❌查找“动态”按钮容器超时 ，观察器未能启动`);
                 }
             }
         }, 500);
