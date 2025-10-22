@@ -2,5 +2,5 @@
   "github": {
     "silent": true
   },
-  "ignoreCommand": "bash -c '! git diff --name-only HEAD^ HEAD | grep -E \"^(api/analyze\\.js|index\\.html|package\\.json|vercel\\.json)$\"'"
+  "ignoreCommand": "bash -c 'if [ $(git rev-list --count HEAD) -le 1 ]; then exit 1; else git diff --name-only HEAD^ HEAD | grep -qE \"^(api/analyze\\.js|index\\.html|package\\.json|vercel\\.json)$\"; fi'"
 }
