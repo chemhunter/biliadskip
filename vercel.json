@@ -2,6 +2,5 @@
   "github": {
     "silent": true
   },
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)api/analyze.js' ':(exclude)index.html' ':(exclude)package.json' ':(exclude)vercel.json'",
-  "includeFiles": ["api/**", "index.html", "package.json", "vercel.json"]
+  "ignoreCommand": "bash -c '! git diff --name-only HEAD^ HEAD | grep -E \"^(api/analyze\\.js|index\\.html|package\\.json|vercel\\.json)$\"'"
 }
