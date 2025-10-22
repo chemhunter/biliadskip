@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)api/analyze.js' ':(exclude)index.html' ':(exclude)package.json' ':(exclude)vercel.json'"
+}
