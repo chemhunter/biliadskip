@@ -1,0 +1,6 @@
+*
+!api/
+!index.html
+!package.json
+!vercel.json
+!package-lock.json
