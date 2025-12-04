@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Comment IP Display
 // @name:zh     B站评论区显示归属地
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/chemhunter/biliadskip/blob/main/js/BiliCommentIP.user.js
 // @version      3.1.2
 // @description  Displays IP location in the Bilibili comment section by intercepting API responses.
 // @description:zh-CN    B站网页端各个页面评论区显示用户IP归属地
