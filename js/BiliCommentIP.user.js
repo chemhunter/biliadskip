@@ -2,7 +2,7 @@
 // @name         Bilibili Comment IP Display
 // @name:zh     B站评论区显示归属地
 // @namespace    http://tampermonkey.net/
-// @version      3.0.2
+// @version      3.1.2
 // @description  Displays IP location in the Bilibili comment section by intercepting API responses.
 // @description:zh-CN    B站网页端各个页面评论区显示用户IP归属地
 // @author        xxapk & 蓝色空間前进四
@@ -17,8 +17,8 @@
 // @match        https://t.bilibili.com/*
 // @match        https://live.bilibili.com/*
 // @icon         https://www.bilibili.com/favicon.ico
-// @updateURL    https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js 
-// @downloadURL  https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js 
+// @updateURL    https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/js/BiliCommentIP.user.js
 // @grant        none
 // @license    GPL-3.0-only
 // @run-at       document-start
@@ -36,21 +36,15 @@
  * 2. 将核心拦截逻辑从暴力的“js源码注入”重构为更温和的“API拦截”。
  * 3. 对代码进行了规范化和重命名，以提高可读性/兼容性/可维护性。
 
- * 原始脚本的核心思想和贡献归功于原作者，感谢其开源精神，以及巧妙的实现思路和开创性工作。
+ * 原始脚本的核心思想和贡献归功于原作者，感谢其开源精神和开创性工作。
  */
 
-    // --- 1. 全局状态与配置 ---
-
     const SCRIPT_NAME = "BiliCommentIP";
-
     const gState = {
         originalFetch: null,
         isFetchHooked: false,
-        //isAppendHooked: false,
-        //isReloadHooked: false
     };
 
-    // --- 核心功能：Fetch 拦截 ---
     function hookFetch() {
         if (gState.isFetchHooked) return;
         const origin = window.fetch;
@@ -62,21 +56,40 @@
         gState.originalFetch = origin;
 
         window.fetch = function(url, options) {
+             if (!url || typeof url !== 'string') return origin(url, options);
+
+            const isReplyAddAPI = url.includes("/x/v2/reply/add");
+            if (isReplyAddAPI && options && options.method === 'POST') {
+                try {
+                    let bodyData = options.body;
+
+                    const params = new URLSearchParams(bodyData);
+                    let message = params.get('message');
+
+                    if (message) {
+                        const ipTagRegex = / <[^>]+>/g;
+                        if (ipTagRegex.test(message)) {
+                            message = message.replace(ipTagRegex, '');
+                            params.set('message', message);
+                            options.body = params.toString();
+                        }
+                    }
+                } catch (err) {
+                    console.error(`[${SCRIPT_NAME}] Error cleaning reply message:`, err);
+                }
+            }
+
             const fetchPromise = origin(url, options);
-            if (!url || typeof url !== 'string') { return fetchPromise };
 
             const isMainCommentAPI = url.includes("reply/wbi/main");
             const isSubCommentAPI = url.includes("/reply/reply?") && url.includes("&root=");
-            if (isMainCommentAPI || isSubCommentAPI) {
-                console.log(`[${SCRIPT_NAME}] Intercepted ${isMainCommentAPI ? 'Main' : 'Sub'} Comment API:`, url.substring(0, 100));
 
+            if (isMainCommentAPI || isSubCommentAPI) {
                 return fetchPromise.then(function(response) {
                     if (!response.ok) {
                         return response;
                     }
                     const clonedResponse = response.clone();
-
-                    // 重写 .json() 方法，这是注入数据的关键
                     response.json = function() {
                         return clonedResponse.json().then(function(result) {
                             return processCommentData(result, isSubCommentAPI);
@@ -95,7 +108,6 @@
         console.log(`[${SCRIPT_NAME}] Fetch hooked successfully.`);
     }
 
-    // --- 数据处理核心 ---
     function processCommentData(data, isSubCommentAPI = false) {
         if (!data || !data.data) return data;
         let commentsToProcess = [];
@@ -117,7 +129,6 @@
         return data;
     }
 
-    /** 将IP属地信息注入到单个评论对象的 uname 字段中。*/
     function injectIpToComment(comment, isSubReply = false) {
         if (!comment || !comment.reply_control || !comment.member || !comment.member.uname) {
             return;
@@ -133,5 +144,4 @@
     }
     console.log(`[${SCRIPT_NAME}] Script starting...`);
     hookFetch();
-
 })();
