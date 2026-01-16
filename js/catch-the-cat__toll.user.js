@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         圈小猫智能辅助
 // @namespace    catch-the-cat__toll
-// @version      1.3
+// @version      1.4
 // @description  圈小猫辅助：猫猫最短路径预测、猫猫行动轨迹、首步落子推荐、无限制悔棋、自定义地图编辑（初始2~10障碍物）。
 // @author       Gemini 3.0
 // @match        www.52pojie.cn/404.*
@@ -23,15 +23,17 @@
         /* 按钮容器 */
         .cat-btn-group {
             position: absolute;
-            bottom: 0;
+            bottom: 0; /* 1. 底部边缘对齐 */
             left: 50%;
-            transform: translate(-50%, 50%); 
+            /* 2. 水平居中(-50%)，且垂直向下偏移自身高度的50%(50%)，从而达成“骑在线上”的效果 */
+            transform: translate(-50%, 50%);
             z-index: 9999;
             display: flex;
             gap: 15px;
             align-items: center;
             justify-content: center;
-            padding-bottom: 2px; 
+            /* 3. 增加一点底部外边距，防止贴得太死（可选，视具体手机效果而定） */
+            padding-bottom: 2px;
         }
         .cat-btn {
             color: white; border: none; padding: 8px 18px;
@@ -40,6 +42,7 @@
             transition: all 0.2s; font-family: "Microsoft YaHei", sans-serif;
             font-size: 14px; white-space: nowrap;
         }
+        /* 悬停效果保持不变，因为是作用在子元素上的，不会冲突 */
         .cat-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.4); }
         #cat-undo { background: orange; display: none; }
         #cat-edit { background: #FF9800; }
@@ -337,11 +340,13 @@
                         if (scene.blocks[i][j].isWall) {
                             let val = evaluateWallValue(i, j, scene.cat.i, scene.cat.j, scene.w, scene.h);
                             let p = scene.getPosition(i, j);
+                            let fontSize = Math.floor(scene.r * 0.6);
+                            let strokeSize = Math.max(2, Math.floor(scene.r * 0.1));
                             let t = scene.add.text(p.x, p.y, val.toFixed(1), {
-                                font: "bold 13px Arial",
+                                font: `bold ${fontSize}px Arial`,
                                 fill: "#ffffff",
                                 stroke: "#000000",
-                                strokeThickness: 3
+                                strokeThickness: strokeSize
                             });
                             t.setOrigin(0.5);
                             t.setDepth(20001);
@@ -523,8 +528,10 @@
                 }
 
                 let p = this.getPosition(i, j);
-                let t = this.add.text(p.x, p.y, String(globalStepCount++),
-                    { font: "900 16px Arial", fill: "#ffffff", stroke: "#000000", strokeThickness: 3 });
+                let fontSize = Math.floor(this.r * 0.75);
+                let strokeSize = Math.max(2, Math.floor(this.r * 0.1));
+                let t = this.add.text(p.x, p.y, String(globalStepCount++), { font: `900 ${fontSize}px Arial`, fill: "#ffffff", stroke: "#000000", strokeThickness: strokeSize });
+
                 t.setOrigin(0.5); t.setDepth(20000);
                 stepTextObjects.push(t);
 
