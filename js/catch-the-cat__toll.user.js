@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         圈小猫智能辅助
 // @namespace    catch-the-cat__toll
-// @version      1.4
+// @version      1.5
 // @description  圈小猫辅助：猫猫最短路径预测、猫猫行动轨迹、首步落子推荐、无限制悔棋、自定义地图编辑（初始2~10障碍物）。
 // @author       Gemini 3.0
 // @match        www.52pojie.cn/404.*
@@ -277,7 +277,8 @@
         historyGraphics.clear();
 
         if (catHistoryPath.length >= 2) {
-            historyGraphics.lineStyle(4, 0xFF4444, 0.8);
+            let lineWidth = Math.max(3, scene.r * 0.25);
+            historyGraphics.lineStyle(lineWidth, 0xFF4444, 0.8);
             historyGraphics.beginPath();
             let start = scene.getPosition(catHistoryPath[0].i, catHistoryPath[0].j);
             historyGraphics.moveTo(start.x, start.y);
@@ -302,7 +303,8 @@
         }
 
         if(minL !== Infinity) {
-            debugGraphics.lineStyle(3, 0xFFFF00, 0.6);
+            let lineWidth = Math.max(3, scene.r * 0.2);
+            debugGraphics.lineStyle(lineWidth, 0xFFFF00, 0.6);
             for(let target of edgePoints) {
                 let curr = target;
                 let path = [curr];
@@ -341,7 +343,7 @@
                             let val = evaluateWallValue(i, j, scene.cat.i, scene.cat.j, scene.w, scene.h);
                             let p = scene.getPosition(i, j);
                             let fontSize = Math.floor(scene.r * 0.6);
-                            let strokeSize = Math.max(2, Math.floor(scene.r * 0.1));
+                            let strokeSize = Math.max(3, Math.floor(scene.r * 0.1));
                             let t = scene.add.text(p.x, p.y, val.toFixed(1), {
                                 font: `bold ${fontSize}px Arial`,
                                 fill: "#ffffff",
@@ -359,10 +361,13 @@
             let suggestion = getFirstStepSuggestion(scene);
             if (suggestion) {
                 let p = scene.getPosition(suggestion.i, suggestion.j);
-                debugGraphics.lineStyle(4, 0x00FF00, 1);
-                debugGraphics.strokeCircle(p.x, p.y, 18);
+                let strokeWidth = Math.max(3, scene.r * 0.2);
+                let radius = scene.r * 0.9;
+
+                debugGraphics.lineStyle(strokeWidth, 0x00FF00, 1);
+                debugGraphics.strokeCircle(p.x, p.y, radius);
                 debugGraphics.fillStyle(0x00FF00, 0.4);
-                debugGraphics.fillCircle(p.x, p.y, 18);
+                debugGraphics.fillCircle(p.x, p.y, radius);
             }
         }
     }
@@ -529,7 +534,7 @@
 
                 let p = this.getPosition(i, j);
                 let fontSize = Math.floor(this.r * 0.75);
-                let strokeSize = Math.max(2, Math.floor(this.r * 0.1));
+                let strokeSize = Math.max(3, Math.floor(this.r * 0.1));
                 let t = this.add.text(p.x, p.y, String(globalStepCount++), { font: `900 ${fontSize}px Arial`, fill: "#ffffff", stroke: "#000000", strokeThickness: strokeSize });
 
                 t.setOrigin(0.5); t.setDepth(20000);
