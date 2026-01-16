@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         圈小猫智能辅助
 // @namespace    catch-the-cat__toll
-// @version      1.2
+// @version      1.3
 // @description  圈小猫辅助：猫猫最短路径预测、猫猫行动轨迹、首步落子推荐、无限制悔棋、自定义地图编辑（初始2~10障碍物）。
 // @author       Gemini 3.0
 // @match        www.52pojie.cn/404.*
@@ -20,9 +20,18 @@
     // ================= UI与样式 =================
     const style = document.createElement('style');
     style.innerHTML = `
+        /* 按钮容器 */
         .cat-btn-group {
-            position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
-            z-index: 9999; display: flex; gap: 15px; align-items: center; justify-content: center;
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translate(-50%, 50%); 
+            z-index: 9999;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+            padding-bottom: 2px; 
         }
         .cat-btn {
             color: white; border: none; padding: 8px 18px;
