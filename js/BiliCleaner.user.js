@@ -2,20 +2,19 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      1.36
+// @version      2.01
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
 // @match        *://www.bilibili.com/*
 // @match        *://live.bilibili.com/*
 // @match        *://message.bilibili.com/*
-// @connect      www.gitlabip.xyz
-// @connect      hub.gitmirror.com
+// @connect      cdn.jsdelivr.net
 // @connect      raw.githubusercontent.com
 // @grant        GM_registerMenuCommand
 // @icon         https://i0.hdslb.com/bfs/static/jinkela/long/images/favicon.ico
 // @license      GPL-3.0 License
-// @run-at       document-end
+// @run-at       document-start
 // @noframes
 // @downloadURL https://update.greasyfork.org/scripts/511437/BiliCleaner.user.js
 // @updateURL https://update.greasyfork.org/scripts/511437/BiliCleaner.meta.js
@@ -32,6 +31,72 @@
     let lastActiveUpName = null;
     let setMainWidth = false;
 
+    // --- 1. 定义默认配置与用户设置 (细化版) ---
+    const defaultSettings = {
+        global: {
+            label: "📺 全局与首页",
+            enable: true,
+            sub: {
+                swipe: { label: "去除首页大屏轮播", enable: true },
+                feed: { label: "去除首页推广动态卡片", enable: true },
+                nav: { label: "去除导航栏广告/会员入口", enable: true },
+                sidebar: { label: "去除空间/动态页侧边栏", enable: true }, // 合并了视频页和动态页的侧边栏
+            }
+        },
+        dynamic: {
+            label: "⚡ 动态瀑布流",
+            enable: true,
+            sub: {
+                goods: { label: "商品推广过滤", enable: true },
+                charge: { label: "充电专属过滤", enable: true },
+                widen: { label: "动态页面宽屏美化", enable: true },
+                popup: { label: "导航栏悬浮”动态“窗内过滤", enable: true } // 新增：控制 watchDynamicAllPanel
+            }
+        },
+        comment: {
+            label: "💬 评论区",
+            enable: true,
+            sub: {
+                adBlock: { label: "去除置顶广告", enable: true },
+                banner: { label: "去除上方活动横幅", enable: true } // 新增：控制 .activity-m-v1 等
+            }
+        },
+        live: {
+            label: "🎥 直播间",
+            enable: true,
+            sub: {
+                gift: { label: "去除礼物栏/送礼提示", enable: true },
+                rank: { label: "去除上方/侧边榜单", enable: true },
+                recommend: { label: "去除下方直播推荐", enable: true }
+            }
+        }
+    };
+
+    // 读取设置，如果本地没有则使用默认，并进行合并防止新版本缺少配置项
+    let userSettings = JSON.parse(localStorage.getItem('biliCleanerSettings')) || defaultSettings;
+
+    function mergeSettings(defaults, users) {
+        for (let key in defaults) {
+            if (!users.hasOwnProperty(key)) {
+                users[key] = defaults[key];
+            } else if (defaults[key].sub) {
+                if (!users[key].sub) users[key].sub = {};
+                for (let subKey in defaults[key].sub) {
+                    if (!users[key].sub.hasOwnProperty(subKey)) {
+                        users[key].sub[subKey] = defaults[key].sub[subKey];
+                    }
+                }
+            }
+        }
+        return users;
+    }
+
+    userSettings = mergeSettings(defaultSettings, userSettings);
+
+    function saveSettings() {
+        localStorage.setItem('biliCleanerSettings', JSON.stringify(userSettings));
+    }
+
     const defaultConfig = {
         keywordStr: `淘宝|京东|天猫|补贴|折扣|福利|专属|下单|运(费?)险|[领惠叠]券|[低特好底保降差性]价`,
         biliAdLinks: ['taobao.com', 'tb.cn', 'jd.com', 'pinduodilo.com','zhuanzhuan.com', 'mall.bilibili.com', 'gaoneng.bilibili.com'],
@@ -40,18 +105,20 @@
 
     async function fetchConfigFromGit() {
         let lastError = null;
-        const gitSource = ['www.gitlabip.xyz', 'hub.gitmirror.com', 'raw.githubusercontent.com']; //github镜像加速及源地址
-        const jsonFile = '/chemhunter/biliadskip/refs/heads/main/biliadwordslinks.json';
+        const gitMirror = [
+            'https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/biliadwordslinks.json',
+            'https://raw.githubusercontent.com/chemhunter/biliadskip/main/biliadwordslinks.json',
+        ];
 
-        for (const source of gitSource) {
-            const url = `https://${source}${jsonFile}?t=${Date.now()}`;
+        for (const source of gitMirror) {
+            const url = `${source}?t=${Date.now()}`;
             try {
                 const response = await fetch(url);
                 if (!response.ok) {throw new Error(`HTTP错误! 状态码: ${response.status}`)};
                 const text = await response.text();
                 try {
                     const configData = JSON.parse(text);
-                    log(`✅ 从git镜像: ${source} 获取到广告基础配置`);
+                   log(`✅ 从git镜像: ${source} 获取到广告基础配置`);
                     return configData;
                 } catch (parseError) { throw new Error(`JSON解析失败: ${parseError.message}`); }
             } catch (error) { lastError = error; continue;}
@@ -126,6 +193,128 @@
     }
 
     function hideUnwantedElements() {
+        const rules = {
+            // 1. 顶部导航栏 (Global -> Nav)
+            nav: [
+                'li.v-popover-wrap.left-loc-entry', // 左侧定位/广告
+                'ul.left-entry > li.v-popover-wrap:last-child', // 下载客户端
+                'ul.right-entry > .vip-wrap', // 大会员
+                ".bili-dyn-version-control__reminding", // 动态页新版提醒
+            ],
+            // 2. 侧边栏 (Global -> Sidebar)
+            sidebar: [
+                ".video-page-game-card-small", // 视频页：右侧游戏卡片
+                '.video-page-special-card-small', // 视频页：右侧特殊卡片
+                '.slide-ad-exp', // 视频页：右侧广告块
+                //'.video-share-wrap', // 视频页：分享按钮(可选)
+                '.video-card-ad-small', // 视频页：弹幕列表下小广告
+                'bili-dyn-home--member .right', // 动态页：右侧个人信息/公告
+                //'.bili-dyn-banner',
+                'aside.right > section > .bili-dyn-banner',// 动态页：右侧公告
+                '.bili-dyn-search-trendings', // 动态页：右侧热搜
+            ],
+            // 3. 评论区横幅 (Comment -> Banner)
+            commentBanner: [
+                '.ad-report.strip-ad', // 视频下方广告上报条
+                '.activity-m-v1', // 评论区上方活动推广
+                '.reply-notice', // 动态评论区提醒条
+            ],
+            // 4. 直播间礼物 (Live -> Gift)
+            liveGift: [
+                "gift-control-vm", // 下方送礼栏
+                ".gift-control-section",
+                '.gift-menu-root', // 礼物列表
+                '.live-room-app .app-body .aside-area .chat-history-panel .chat-items .chat-item.gift-item', // 聊天栏礼物消息
+            ],
+            // 5. 直播间推荐 (Live -> Recommend)
+            liveRecommend: [
+                '.room-info-ctnr', // 下方推荐直播 4x2
+            ],
+            // 6. 直播间榜单 (Live -> Rank)
+            liveRank: [
+                'rank-list-ctnr-box .tab-content.ts-dot-2', // 右上角/上方榜单内容
+                // "rank-list-vm", // (原代码注释掉的，如需开启可解注)
+                // ".rank-list-section",
+            ],
+            // 7. 杂项/遮罩 (Global -> Sidebar 或 独立)
+            misc: [
+                //'.bili-mini-mask', // 登录遮罩
+            ]
+        };
+
+        const { hostname, pathname } = location;
+        const isVideoPage = pathname.startsWith('/video/');
+        const isDynamicPage = hostname === 't.bilibili.com' || pathname.startsWith('/opus/');
+        const isLivePage = hostname === 'live.bilibili.com' || pathname.startsWith('/live/');
+
+        let selectorsToApply = [];
+
+        // --- 应用逻辑 ---
+
+        // 全局开关检查
+        if (userSettings.global.enable) {
+            // 导航栏
+            if (userSettings.global.sub.nav.enable) {
+                selectorsToApply.push(...rules.nav);
+            }
+            // 侧边栏 (视频页 或 动态页)
+            if (userSettings.global.sub.sidebar.enable) {
+                if (isVideoPage || isDynamicPage) {
+                    selectorsToApply.push(...rules.sidebar);
+                }
+            }
+            // 登录遮罩 (默认归类到侧边栏或始终开启，这里跟随sidebar)
+            if (userSettings.global.sub.sidebar.enable) {
+                selectorsToApply.push(...rules.misc);
+            }
+        }
+
+        // 评论区开关检查
+        if (userSettings.comment.enable) {
+            if (userSettings.comment.sub.banner.enable) {
+                selectorsToApply.push(...rules.commentBanner);
+            }
+        }
+
+        // 直播间开关检查
+        if (isLivePage && userSettings.live.enable) {
+            if (userSettings.live.sub.gift.enable) selectorsToApply.push(...rules.liveGift);
+            if (userSettings.live.sub.recommend.enable) selectorsToApply.push(...rules.liveRecommend);
+
+            if (userSettings.live.sub.rank.enable) {
+                selectorsToApply.push(...rules.liveRank);
+                // 直播间榜单高度调整逻辑
+                const parentElement = document.getElementById('rank-list-vm');
+                const childElement = document.getElementById('rank-list-ctnr-box');
+                const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
+                if ( scrollbarHeight ) scrollbarHeight.style.height = '432px';
+
+                if (parentElement && childElement) {
+                    let height = parseFloat(window.getComputedStyle(childElement).height);
+                    if (!parentElement.dataset.heightModified) {
+                        height = height / 3 - 1;
+                    }
+                    parentElement.style.height = `${height}px`;
+                    childElement.style.height = `${height}px`;
+                    parentElement.dataset.heightModified = 'true';
+                }
+            }
+        }
+
+        // 执行隐藏
+        for (const selector of selectorsToApply) {
+            const element = document.querySelector(selector);
+            if (element) {
+                if (selector === '.bili-mini-mask') {
+                    if (window.getComputedStyle(element).display !== 'none') hideItem(element);
+                } else {
+                    hideItem(element);
+                }
+            }
+        }
+    }
+
+    function hideUnwantedElements2() {
         // 分组规则：按页面类型
         const rules = {
             common: [
@@ -146,8 +335,8 @@
             dynamic: [
                 'bili-dyn-home--member .right',
                 '.bili-dyn-banner', //动态右侧社区公告
-                //'aside.right > section > .bili-dyn-banner',
-                //'.bili-dyn-search-trendings',//动态右侧热搜，毫无营养
+                'aside.right > section > .bili-dyn-banner',
+                '.bili-dyn-search-trendings', //动态右侧热搜，毫无营养
                 '.reply-notice', //动态页面评论区上方提醒条
                 ".bili-dyn-version-control__reminding", //动态页面新版导航提醒
             ],
@@ -156,10 +345,10 @@
                 ".gift-control-section", //直播界面下方送礼栏
                 '.room-info-ctnr', //直播界面下面推荐直播4x2
                 '.gift-menu-root', //直播窗口内礼物列表
-                'rank-list-vm', //直播界面上方榜单
-                '.rank-list-section', //直播界面上方榜单
+                //"rank-list-vm", //直播界面上方榜单
+                //".rank-list-section", //直播界面上方榜单
                 'rank-list-ctnr-box .tab-content.ts-dot-2',
-                '.app-body .player-and-aside-area .aside-area .chat-history-panel .chat-items .chat-item.gift-item', //直播聊天栏礼物
+                '.live-room-app .app-body .aside-area .chat-history-panel .chat-items .chat-item.gift-item', //直播聊天栏礼物
             ]
         };
 
@@ -176,7 +365,7 @@
             selectorsToApply.push(...rules.dynamic);
         } else if (isLivePage) {
             selectorsToApply.push(...rules.live);
-            /*
+
             const parentElement = document.getElementById('rank-list-vm');
             const childElement = document.getElementById('rank-list-ctnr-box');
             const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
@@ -190,8 +379,7 @@
                 parentElement.style.height = `${height}px`;
                 childElement.style.height = `${height}px`;
                 parentElement.dataset.heightModified = 'true';
-            } 
-            */
+            }
         }
 
         for (const selector of selectorsToApply) {
@@ -208,7 +396,7 @@
         }
     }
 
-    // 检查评论区置顶广告
+    // 检查评论区
     function checkCommentTopAdsOld() {
         const commentAds = document.querySelectorAll('.dynamic-card-comment .comment-list.has-limit .list-item.reply-wrap.is-top');
         commentAds.forEach(comment => {
@@ -225,9 +413,10 @@
         return false;
     }
 
-    // 新版本动态 commentapp or  bili-dyn-comment
-    // 旧版本动态 dynamic-card-comment
+    // 新版本动态 commentapp or  bili-dyn-comment; 旧版本动态 dynamic-card-comment
     function checkCommentsForAds() {
+        // --- 对应 adBlock 开关 ---
+        if (!userSettings.comment.enable || !userSettings.comment.sub.adBlock.enable) return false;
 
         const dynCommentOldVersion = document.querySelector('.dynamic-card-comment');
         if (dynCommentOldVersion) {
@@ -280,7 +469,10 @@
                                 hideItem(thread);
                                 hiddenAdCount++;
                                 log('评论区置顶广告 +1')
-                                window.MyObserver.disconnect();
+                                const isVideoPage = window.location.pathname.startsWith('/video/');
+                                if (isVideoPage) {
+                                    window.MyObserver.disconnect();
+                                }
                                 let message = `隐藏广告 x ${hiddenAdCount}`;
                                 showMessage(message);
                                 return true;
@@ -341,7 +533,7 @@
                 }
             }
 
-            // 只有当当前激活的UP主与上次不同时才输出日志
+            // 只有的当前激活的UP主与上次不同时才输出日志
             if (currentActiveUpName && currentActiveUpName !== lastActiveUpName) {
                 const inWhiteList = whiteList.includes(currentActiveUpName)? " (白名单)" : '';
                 console.log(
@@ -364,135 +556,160 @@
         let hiddenAdCount = 0;
         const hostname = window.location.hostname;
         const pathname = window.location.pathname;
-        hideUnwantedElements()
+
+        // 0. 执行CSS清理
+        hideUnwantedElements();
 
         //B站首页
         if (hostname === 'www.bilibili.com' && !pathname.startsWith('/video/')) {
-            // 处理 feed 卡片
-            processFeedCards()
+            if (userSettings.global.enable) {
+                // ---首页Feed流卡片 ---
+                if (userSettings.global.sub.feed.enable) {
+                    processFeedCards();
+                    document.querySelectorAll('.floor-single-card').forEach(card => hideItem(card));
+                    // 隐藏无视频包裹的卡片
+                    document.querySelectorAll('.feed-card').forEach(card => {
+                        if (!card.querySelector('.bili-video-card__wrap')) hideItem(card);
+                    });
+                }
 
-            // 隐藏推广的 feed 卡片
-            const floorCards = document.querySelectorAll('.floor-single-card');
-            floorCards.forEach(card => {
-                hideItem(card);
-            });
-
-            //隐藏首页大屏
-            const targetElement = document.querySelector('.recommended-swipe');
-            hideItem(targetElement);
+                // --- 首页大屏轮播 ---
+                if (userSettings.global.sub.swipe.enable) {
+                    const targetElement = document.querySelector('.recommended-swipe');
+                    hideItem(targetElement);
+                }
+            }
 
             //动态和个人空间页面
-        } else if (hostname === 't.bilibili.com' || hostname === 'space.bilibili.com') {
+        } else if (['t.bilibili.com', 'space.bilibili.com'].includes(hostname)) {
             if (hostname === 't.bilibili.com') {
                 logCurrentActiveUp();
-                if (!setMainWidth) {
-                    const dynMain = document.querySelector('.bili-dyn-home--member > main')
-                    if (dynMain) {
-                        const currentWidth = parseInt(getComputedStyle(dynMain).width, 10);
-                        dynMain.style.width = (currentWidth + 175) + 'px';
-                        setMainWidth = true;
+                // 宽屏美化
+                if (userSettings.dynamic.enable && userSettings.dynamic.sub.widen.enable) {
+                    if (!setMainWidth) {
+                        const dynMain = document.querySelector('.bili-dyn-home--member > main')
+                        if (dynMain) {
+                            const currentWidth = parseInt(getComputedStyle(dynMain).width, 10);
+                            dynMain.style.width = (currentWidth + 175) + 'px';
+                            setMainWidth = true;
+                        }
+                    }
+                    const contentDiv = document.querySelector("#app > div.content");
+                    if (contentDiv && contentDiv.style.width !== '900px') {
+                        contentDiv.style.width = '900px';
                     }
                 }
             }
+
             checkCommentsForAds();
 
-            const items = document.querySelectorAll('.bili-dyn-list__item');
-            items.forEach(item => {
-                if (window.getComputedStyle(item).display !== 'none') {
-                    const titleElement = item.querySelector('.bili-dyn-title');
-                    if (titleElement && whiteList.includes(titleElement.textContent.trim())) {
-                        return;
-                    }
+            // --- 动态过滤逻辑 ---
+            if (userSettings.dynamic.enable) {
+                const items = document.querySelectorAll('.bili-dyn-list__item');
+                items.forEach(item => {
+                    if (window.getComputedStyle(item).display !== 'none') {
+                        const titleElement = item.querySelector('.bili-dyn-title');
+                        if (titleElement && whiteList.includes(titleElement.textContent.trim())) return;
 
-                    function isAdItem(item) {
-                        return item.querySelector('bili-dyn-card-goods, dyn-goods');
-                    }
+                        function isAdItem(item) { return item.querySelector('.bili-dyn-card-goods, .dyn-goods, bili-dyn-card-goods, dyn-goods'); }
 
-                    function isChargeItem(item) {
-                        if (item.querySelector('.dyn-blocked-mask, .bili-dyn-upower-common, .bili-dyn-upower-lottery, .dyn-icon-badge__renderimg.bili-dyn-item__iconbadge, .bili-dyn-card-common')) return true;
-                        const badge = item.querySelector('.bili-dyn-card-video__badge');
-                        if (badge && /专属|抢先看/.test(badge.textContent)) return true;
-                        const lotteryTitle = item.querySelector('.dyn-upower-lottery__title');
-                        if (lotteryTitle && lotteryTitle.textContent.includes('专属')) return true;
-                        return false;
-                    }
-
-                    if (isAdItem(item)) {
-                        hideItem(item);
-                        log('广告卡片 +1');
-                        hiddenAdCount++;
-                        return;
-                    }
-
-                    if (isChargeItem(item)) {
-                        const titleElement = item.querySelector('.bili-dyn-card-video__title');
-                        if (titleElement) {
-                            const videoTitle = titleElement.textContent.trim();
-                            log(`充电专属 +1: \n ----->"${videoTitle}"`);
-                        } else {
-                            log(`充电专属 +1`);
+                        function isChargeItem(item) {
+                            if (item.querySelector('.dyn-blocked-mask, .bili-dyn-upower-common, .bili-dyn-upower-lottery, .dyn-icon-badge__renderimg.bili-dyn-item__iconbadge, .bili-dyn-card-common')) return true;
+                            const badge = item.querySelector('.bili-dyn-card-video__badge');
+                            if (badge && /专属|抢先看/.test(badge.textContent)) return true;
+                            const lotteryTitle = item.querySelector('.dyn-upower-lottery__title');
+                            if (lotteryTitle && lotteryTitle.textContent.includes('专属')) return true;
+                            return false;
                         }
-                        hideItem(item);
-                        hiddenChargeCount++;
-                        return;
-                    }
 
-                    // 辅助函数：在指定容器中检查广告并隐藏
-                    function checkAndHideAd(container, type) {
-                        const richtext = container.querySelector('.bili-rich-text .bili-rich-text__content')?.textContent?.trim();
-                        if ( richtext ) {
-                            const foundAd = findAdwords(richtext);
-                            if (foundAd) {
-                                log(`广告关键词 +1(${type}) \n ----> ${richtext.slice(0,30)}`);
+                        // 商品过滤
+                        if (userSettings.dynamic.sub.goods.enable) {
+                            if (isAdItem(item)) {
                                 hideItem(item);
+                                log('广告卡片 +1');
                                 hiddenAdCount++;
-                                return true;
+                                return;
+                            }
+                            // 过期预约也归类在此
+                            const disabled = item.querySelector('.uncheck.disabled');
+                            if (disabled) {
+                                hideItem(item);
+                                return;
                             }
                         }
-                        return false;
-                    }
 
-                    const contentDiv = item.querySelector('.bili-dyn-content');
-                    if (!contentDiv) return;
-
-                    // 尝试在转发内容中查找
-                    const origContent = contentDiv.querySelector('.bili-dyn-content__orig.reference');
-                    if (origContent) {
-                        if (checkAndHideAd(origContent, '转发')) return;
-                    }
-
-                    // 尝试在原创内容中查找
-                    if (checkAndHideAd(contentDiv, '原创')) return;
-
-                    const spans = item.querySelectorAll('span');
-                    spans.forEach(span => {
-                        const dataUrl = span.getAttribute('data-url');
-                        if (dataUrl && biliAdWordsConfig.biliAdLinks.some(blocked => dataUrl.includes(blocked))) {
-                            hideItem(item);
-                            log('广告链接 +1')
-                            hiddenAdCount++;
-                        } else if (span.textContent.includes('专属')) {
-                            hideItem(item);
-                            log('充电专属 +1')
-                            hiddenChargeCount++;
-                            return;
+                        // --- 充电/专属过滤开关 ---
+                        if (userSettings.dynamic.sub.charge.enable) {
+                            if (isChargeItem(item)) {
+                                const titleElement = item.querySelector('.bili-dyn-card-video__title');
+                                if (titleElement) {
+                                    const videoTitle = titleElement.textContent.trim();
+                                    log(`充电专属 +1: \n ----->"${videoTitle}"`);
+                                } else {
+                                    log(`充电专属 +1`);
+                                }
+                                hideItem(item);
+                                hiddenChargeCount++;
+                                return;
+                            }
                         }
-                    });
 
-                    const disabled = item.querySelector('.uncheck.disabled');
-                    if (disabled) {
-                        hideItem(item);
-                        log('过期预约');
-                        return;
+                        // 辅助函数：在指定容器中检查广告并隐藏
+                        function checkAndHideAd(container, type) {
+                            let richtext = container.querySelector('.bili-rich-text .bili-rich-text__content')?.textContent?.trim();
+                            if ( !richtext ) {
+                                richtext = container.querySelector('.dyn-card-opus')?.textContent?.trim();
+                            }
+                            if (richtext) {
+                                const foundAd = findAdwords(richtext);
+                                if (foundAd) {
+                                    log(`广告关键词 +1(${type}) \n ----> ${richtext.slice(0,30)}`);
+                                    hideItem(item);
+                                    hiddenAdCount++;
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+
+                        // --- 【修改】关键词/链接过滤开关 ---
+                        if (userSettings.dynamic.sub.goods.enable) {
+                            //查找动态主体内容 bili-dyn-content
+                            const bili_dyn_content = item.querySelector('.bili-dyn-content');
+                            // 注意：这里需要加个判空，防止报错
+                            if (bili_dyn_content) {
+                                const origContent = bili_dyn_content.querySelector('.bili-dyn-content__orig.reference');
+                                const orig = origContent ? '转发' : '原创'
+                                if(checkAndHideAd(bili_dyn_content, orig)) return; // 如果隐藏了，直接返回
+                            }
+
+                            const spans = item.querySelectorAll('span');
+                            spans.forEach(span => {
+                                const dataUrl = span.getAttribute('data-url');
+                                if (dataUrl && biliAdWordsConfig.biliAdLinks.some(blocked => dataUrl.includes(blocked))) {
+                                    hideItem(item);
+                                    log('广告链接 +1')
+                                    hiddenAdCount++;
+                                } else if (span.textContent.includes('专属')) {
+                                    hideItem(item);
+                                    log('充电专属 +1')
+                                    hiddenChargeCount++;
+                                    return;
+                                }
+                            });
+                        }
                     }
-                }
-            });
+                });
+            }
             //视频页面
         } else if (pathname.startsWith('/video/BV')) {
-            if (!checkCommentsForAds()) {
-                setTimeout(() => {
-                    checkCommentsForAds();
-                }, 2000);
+            // --- 【修改】评论区开关 ---
+            if (userSettings.comment.enable) {
+                if (!checkCommentsForAds()) {
+                    setTimeout(() => {
+                        checkCommentsForAds();
+                    }, 2000);
+                }
             }
         }
 
@@ -530,6 +747,9 @@
     }
 
     function watchDynamicAllPanel() {
+        // --- 对应 popup 开关 ---
+        if (!userSettings.dynamic.enable || !userSettings.dynamic.sub.popup.enable) return;
+
         if (setupIntervalId) clearInterval(setupIntervalId);
         const containerObserver = new MutationObserver(mutations => {
             for (const mutation of mutations) {
@@ -537,7 +757,7 @@
                     if (node.nodeType !== 1) continue;
                     const panel = node.matches('.dynamic-all') ? node : node.querySelector('.dynamic-all');
                     if (panel) {
-                        log('✅ dynamic-all 面板已插入');
+                        log('✅ 导航栏“动态”面板已插入');
                         panel.querySelectorAll('a[data-mod="top_right_bar_window_dynamic"]').forEach(filterSingleDynamicLink);
                         if (panelCardObserver) panelCardObserver.disconnect();
                         panelCardObserver = new MutationObserver(cardMutations => {
@@ -855,8 +1075,12 @@
         const oldList = localStorage.getItem('whiteList');
         if (oldList) {localStorage.setItem('biliUpWhiteList', oldList);localStorage.removeItem('whiteList');}
         whiteList = JSON.parse(localStorage.getItem('biliUpWhiteList')) || [];
+
+        // --- 注册设置菜单 ---
+        GM_registerMenuCommand("⚙️ 功能开关", openSettingsMenu);
+
         // 注册菜单命令
-        GM_registerMenuCommand("UP白名单", whiteListMenu);
+        GM_registerMenuCommand("🛡️ UP白名单", whiteListMenu);
 
         //创建提醒元素
         messageDiv = document.createElement('div');
@@ -871,9 +1095,113 @@
             zIndex: '9999',
             display: 'none'
         });
-        document.body.appendChild(messageDiv);
+
+        if (document.body) {
+            document.body.appendChild(messageDiv);
+        } else {
+            document.addEventListener('DOMContentLoaded', () => {
+                document.body.appendChild(messageDiv);
+            });
+        }
 
         lastPathname = window.location.pathname;
+    }
+
+    // --- 【新增】2. 设置菜单 UI ---
+    function openSettingsMenu() {
+        // 创建背景遮罩
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10000;';
+
+        // 创建菜单容器
+        const container = document.createElement('div');
+        container.id = 'BiliCleanerSettings';
+        container.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 500px; padding: 20px; background: #fff; border-radius: 10px; z-index: 10001; font-size: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); max-height: 80vh; overflow-y: auto;';
+
+        // 标题
+        const title = document.createElement('h3');
+        title.textContent = 'BiliCleaner 功能开关';
+        title.style.cssText = 'text-align: center; margin-bottom: 15px; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 10px;';
+        container.appendChild(title);
+
+        const content = document.createElement('div');
+
+        // 遍历生成开关
+        for (const [key, group] of Object.entries(userSettings)) {
+            const groupDiv = document.createElement('div');
+            groupDiv.style.cssText = "margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 6px;";
+
+            // 父级开关行
+            const header = document.createElement('div');
+            header.style.cssText = "display: flex; align-items: center; font-weight: bold; margin-bottom: 5px;";
+
+            const groupCb = document.createElement('input');
+            groupCb.type = 'checkbox';
+            groupCb.checked = group.enable;
+            groupCb.style.marginRight = '8px';
+
+            const groupLabel = document.createElement('span');
+            groupLabel.textContent = group.label;
+
+            header.appendChild(groupCb);
+            header.appendChild(groupLabel);
+            groupDiv.appendChild(header);
+
+            const subContainer = document.createElement('div');
+            subContainer.style.cssText = `margin-left: 24px; display: ${group.enable ? 'block' : 'none'};`;
+
+            groupCb.onchange = (e) => {
+                group.enable = e.target.checked;
+                subContainer.style.display = group.enable ? 'block' : 'none';
+                saveSettings();
+            };
+
+            for (const [subKey, subItem] of Object.entries(group.sub)) {
+                const subRow = document.createElement('div');
+                subRow.style.margin = "5px 0";
+
+                const subCb = document.createElement('input');
+                subCb.type = 'checkbox';
+                subCb.checked = subItem.enable;
+                subCb.style.marginRight = '8px';
+
+                const subLabel = document.createElement('label');
+                subLabel.textContent = subItem.label;
+                subLabel.style.cursor = 'pointer';
+                subLabel.onclick = () => subCb.click();
+
+                subCb.onchange = (e) => {
+                    subItem.enable = e.target.checked;
+                    saveSettings();
+                };
+
+                subRow.appendChild(subCb);
+                subRow.appendChild(subLabel);
+                subContainer.appendChild(subRow);
+            }
+            groupDiv.appendChild(subContainer);
+            content.appendChild(groupDiv);
+        }
+        container.appendChild(content);
+
+        // 关闭按钮
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = "保存并生效";
+        closeBtn.style.cssText = `display: block; width: 100%; padding: 10px; background: #00a1d6; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 15px;`;
+
+        const closeAction = () => {
+            saveSettings();
+            document.body.removeChild(backdrop);
+            document.body.removeChild(container);
+            checkForContentToHide();
+            showMessage("设置已保存");
+        };
+        closeBtn.onclick = closeAction;
+        backdrop.onclick = closeAction;
+
+        container.appendChild(closeBtn);
+        document.body.appendChild(backdrop);
+        document.body.appendChild(container);
     }
 
     function reinitializeAllObservers() {
@@ -894,10 +1222,12 @@
     // 导航观察器 ---
     function setupNavigationObserver() {
         const observer = new MutationObserver(() => {
-            const currentPathname = window.location.pathname;
-            if (!lastPathname || currentPathname !== lastPathname) {
-                if (lastPathname) log(`检测到页面导航: ${lastPathname} -> ${currentPathname}`);
-                lastPathname = currentPathname;
+            const currentPath = window.location.pathname.replace(/\/$/, '');
+            const lastPath = lastPathname.replace(/\/$/, '');
+
+            if (!lastPathname || currentPath !== lastPath) {
+                if (lastPathname) log(`检测到页面导航: ${lastPathname} -> ${window.location.pathname}`);
+                lastPathname = window.location.pathname;
                 debounce(reinitializeAllObservers, 1500)();
             }
         });
@@ -905,13 +1235,198 @@
         log('✅ 主导航观察器已启动');
     }
 
+function injectBiliInterceptor() {
+        const interceptorLogic = `
+        (function() {
+            console.log('[BiliCleaner] 🚀 网络拦截器已加载');
+
+            const originalFetch = window.fetch;
+            const targetDynUrl = '/x/polymer/web-dynamic/v1/feed/all';
+            const targetReplyUrl = '/x/v2/reply/wbi/main';
+
+            let runtimeSettings = null;
+            let runtimeWhiteList = [];
+            let runtimeKeywords = null;
+
+            function refreshRuntimeConfig() {
+                try {
+                    const s = localStorage.getItem('biliCleanerSettings');
+                    const w = localStorage.getItem('biliUpWhiteList');
+                    const c = localStorage.getItem('localConfig');
+
+                    runtimeSettings = s ? JSON.parse(s) : null;
+                    runtimeWhiteList = w ? JSON.parse(w) : [];
+                    const configObj = c ? JSON.parse(c) : null;
+
+                    if (configObj && configObj.keywordStr) {
+                        runtimeKeywords = new RegExp(configObj.keywordStr.replace(/\\\\s+/g, ''), 'gi');
+                    }
+                } catch (e) {}
+            }
+
+            function filterDynamic(json, settings, whiteList, keywordRegex) {
+                if (!json?.data?.items || !settings?.dynamic?.enable) return json;
+
+                const enableGoods = settings.dynamic.sub.goods.enable;
+                const enableCharge = settings.dynamic.sub.charge.enable;
+                const originalCount = json.data.items.length;
+
+                json.data.items = json.data.items.filter(item => {
+                    const authorName = item.modules?.module_author?.name || '未知用户';
+                    if (authorName && whiteList.includes(authorName)) return true;
+
+                    const dyn = item.modules?.module_dynamic;
+
+                    // 1. 结构性拦截
+                    if (enableGoods) {
+                        const addType = dyn?.additional?.type;
+                        if (addType === "ADDITIONAL_TYPE_GOODS") {
+                            console.log('[BiliCleaner] 🚫 网络拦截-带货动态:', authorName);
+                            return false;
+                        }
+                        if (addType === "ADDITIONAL_TYPE_RESERVE") {
+                            console.log('[BiliCleaner] 🚫 网络拦截-预约动态:', authorName);
+                            return false;
+                        }
+                    }
+
+                    // 2. 充电拦截
+                    if (enableCharge) {
+                        if (dyn?.major?.type === "MAJOR_TYPE_BLOCKED" || item.basic?.is_only_fans) {
+                            console.log('[BiliCleaner] 🚫 网络拦截-充电专属:', authorName);
+                            return false;
+                        }
+                    }
+
+                    // 3. 文本拦截
+                    if (enableGoods && keywordRegex) {
+                        let textSet = [
+                            dyn?.desc?.text,
+                            dyn?.major?.opus?.summary?.text,
+                            dyn?.major?.archive?.title
+                        ];
+                        if (item.type === "DYNAMIC_TYPE_FORWARD" && item.orig?.modules?.module_dynamic) {
+                            const o = item.orig.modules.module_dynamic;
+                            textSet.push(o.desc?.text, o.major?.opus?.summary?.text, o.major?.archive?.title);
+                        }
+                        const combinedText = textSet.filter(Boolean).join("\\n");
+                        if (combinedText) {
+                            const matches = combinedText.match(keywordRegex);
+                            if (matches && matches.some(m => !['评论','评论区','产品'].includes(m))) {
+                                console.log('[BiliCleaner] 🚫 网络拦截-关键词命中:', authorName, '->', combinedText.slice(0, 30).replace(/\\n/g, ' ') + '...');
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                });
+
+                const blockedCount = originalCount - json.data.items.length;
+                if (blockedCount > 0) console.log('[BiliCleaner] 🧹 动态流已净化: 移除 ' + blockedCount + ' 条广告');
+                return json;
+            }
+
+            function filterReply(json, settings, whiteList, keywordRegex) {
+                if (!json?.data || !settings?.comment?.sub?.adBlock?.enable) return json;
+
+                const checkAd = (r, source) => {
+                    if (!r?.content) return false;
+                    const u = r.member?.uname || '未知用户';
+                    if (whiteList.includes(u)) return false;
+
+                    if (r.content.jump_url && Object.keys(r.content.jump_url).length > 0) {
+                        console.log('[BiliCleaner] 🚫 网络拦截-置顶带货(' + source + '):', u);
+                        return true;
+                    }
+
+                    if (keywordRegex && r.content.message?.match(keywordRegex)) {
+                         const isReal = r.content.message.match(keywordRegex).some(m => !['评论','评论区','产品'].includes(m));
+                         if (isReal) {
+                            console.log('[BiliCleaner] 🚫 网络拦截-置顶关键词(' + source + '):', u);
+                            return true;
+                         }
+                    }
+                    return false;
+                };
+
+                // 清洗 data.top.upper
+                if (json.data.top?.upper && checkAd(json.data.top.upper, 'upper')) {
+                    json.data.top.upper = null;
+                }
+
+                // 清洗 data.top.admin
+                //if (json.data.top?.admin) {
+                //    console.log('[BiliCleaner] 🚫 网络拦截-官方置顶(admin)');
+                //    json.data.top.admin = null;
+                //}
+
+                // 清洗 data.top_replies
+                if (Array.isArray(json.data.top_replies)) {
+                    const before = json.data.top_replies.length;
+                    json.data.top_replies = json.data.top_replies.filter(r => !checkAd(r, 'top_replies'));
+                    if (json.data.top_replies.length < before) {
+                        console.log('[BiliCleaner] 🧹 评论区已净化: 移除 ' + (before - json.data.top_replies.length) + ' 条广告');
+                    }
+                }
+
+                return json;
+            }
+
+            window.fetch = async function(...args) {
+                const url = (typeof args[0] === 'string') ? args[0] : args[0].url;
+
+                if (url && (url.includes(targetDynUrl) || url.includes(targetReplyUrl))) {
+                    refreshRuntimeConfig();
+                }
+
+                const response = await originalFetch.apply(this, args);
+
+                if (url && (url.includes(targetDynUrl) || url.includes(targetReplyUrl))) {
+                    try {
+                        const clone = response.clone();
+                        let json = await clone.json();
+
+                        if (url.includes(targetDynUrl)) {
+                            json = filterDynamic(json, runtimeSettings, runtimeWhiteList, runtimeKeywords);
+                        } else {
+                            json = filterReply(json, runtimeSettings, runtimeWhiteList, runtimeKeywords);
+                        }
+
+                        return new Response(JSON.stringify(json), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
+                    } catch (e) {
+                        return response;
+                    }
+                }
+                return response;
+            };
+        })();
+        `;
+
+        const script = document.createElement('script');
+        script.textContent = interceptorLogic;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    }
+
     async function initApp() {
         log('脚本加载，初始化');
         await getAdWordsConfig();
         prepareForWork();
-        reinitializeAllObservers();
-        setupNavigationObserver();
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                reinitializeAllObservers();
+                setupNavigationObserver();
+            });
+        } else {
+            reinitializeAllObservers();
+            setupNavigationObserver();
+        }
     }
 
+    injectBiliInterceptor();
     initApp().catch(console.error);
 })();
