@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      2.01
+// @version      2.02
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -34,68 +34,84 @@
     // --- 1. 定义默认配置与用户设置 (细化版) ---
     const defaultSettings = {
         global: {
-            label: "📺 全局与首页",
+            label: "📺 全局与首页_屏蔽项",
             enable: true,
             sub: {
-                swipe: { label: "去除首页大屏轮播", enable: true },
-                feed: { label: "去除首页推广动态卡片", enable: true },
-                nav: { label: "去除导航栏广告/会员入口", enable: true },
-                sidebar: { label: "去除空间/动态页侧边栏", enable: true }, // 合并了视频页和动态页的侧边栏
+                swipe: { label: "首页大屏轮播", enable: true },
+                feed: { label: "首页推广动态卡片", enable: true },
+                nav: { label: "导航栏广告/会员入口", enable: true },
+                sidebar: { label: "侧边栏：热搜、公告等", enable: true }, // 合并了视频页和动态页的侧边栏
             }
         },
         dynamic: {
-            label: "⚡ 动态瀑布流",
+            label: "⚡ 动态瀑布流_屏蔽项",
             enable: true,
             sub: {
-                goods: { label: "商品推广过滤", enable: true },
-                charge: { label: "充电专属过滤", enable: true },
+                goods: { label: "商品推广", enable: true },
+                charge: { label: "充电专属", enable: true },
                 widen: { label: "动态页面宽屏美化", enable: true },
-                popup: { label: "导航栏悬浮”动态“窗内过滤", enable: true } // 新增：控制 watchDynamicAllPanel
+                popup: { label: "导航栏悬浮”动态“窗", enable: true } // 新增：控制 watchDynamicAllPanel
             }
         },
         comment: {
-            label: "💬 评论区",
+            label: "💬 评论区_屏蔽项",
             enable: true,
             sub: {
-                adBlock: { label: "去除置顶广告", enable: true },
-                banner: { label: "去除上方活动横幅", enable: true } // 新增：控制 .activity-m-v1 等
+                adBlock: { label: "评论区置顶广告", enable: true },
+                banner: { label: "评论区上方活动横幅", enable: true } // 新增：控制 .activity-m-v1 等
             }
         },
         live: {
-            label: "🎥 直播间",
+            label: "🎥 直播间_屏蔽项",
             enable: true,
             sub: {
-                gift: { label: "去除礼物栏/送礼提示", enable: true },
-                rank: { label: "去除上方/侧边榜单", enable: true },
-                recommend: { label: "去除下方直播推荐", enable: true }
+                rank: { label: "评论区上方榜单", enable: true },
+                giftTip: { label: "聊天栏送礼提示", enable: true },
+                giftBar: { label: "下方礼物栏", enable: true },
+                recommend: { label: "下方直播推荐", enable: true }
             }
         }
     };
 
-    // 读取设置，如果本地没有则使用默认，并进行合并防止新版本缺少配置项
-    let userSettings = JSON.parse(localStorage.getItem('biliCleanerSettings')) || defaultSettings;
+    function synchronizeSettings(defaults, stored) {
+        // 如果 stored 不是对象或为空，则直接复制 defaults 的副本
+        if (!stored || typeof stored !== 'object') {
+            return JSON.parse(JSON.stringify(defaults)); // 深拷贝
+        }
 
-    function mergeSettings(defaults, users) {
+        const result = {};
         for (let key in defaults) {
-            if (!users.hasOwnProperty(key)) {
-                users[key] = defaults[key];
-            } else if (defaults[key].sub) {
-                if (!users[key].sub) users[key].sub = {};
-                for (let subKey in defaults[key].sub) {
-                    if (!users[key].sub.hasOwnProperty(subKey)) {
-                        users[key].sub[subKey] = defaults[key].sub[subKey];
-                    }
+            const defaultCategory = defaults[key];
+            const storedCategory = stored[key];
+
+            // 创建新的分类对象，以默认分类为基础
+            result[key] = {
+                label: defaultCategory.label, // 始终使用最新 label
+                enable: storedCategory && typeof storedCategory.enable === 'boolean' ? storedCategory.enable : defaultCategory.enable,
+                sub: {}
+            };
+
+            if (defaultCategory.sub) {
+                for (let subKey in defaultCategory.sub) {
+                    const defaultSub = defaultCategory.sub[subKey];
+                    const storedSub = storedCategory && storedCategory.sub ? storedCategory.sub[subKey] : null;
+
+                    result[key].sub[subKey] = {
+                        label: defaultSub.label,
+                        enable: storedSub && typeof storedSub.enable === 'boolean' ? storedSub.enable : defaultSub.enable
+                    };
                 }
             }
         }
-        return users;
+        return result;
     }
-
-    userSettings = mergeSettings(defaultSettings, userSettings);
 
     function saveSettings() {
         localStorage.setItem('biliCleanerSettings', JSON.stringify(userSettings));
     }
+
+    let stored = JSON.parse(localStorage.getItem('biliCleanerSettings')) || {};
+    let userSettings = synchronizeSettings(defaultSettings, stored);
 
     const defaultConfig = {
         keywordStr: `淘宝|京东|天猫|补贴|折扣|福利|专属|下单|运(费?)险|[领惠叠]券|[低特好底保降差性]价`,
@@ -118,7 +134,7 @@
                 const text = await response.text();
                 try {
                     const configData = JSON.parse(text);
-                   log(`✅ 从git镜像: ${source} 获取到广告基础配置`);
+                    log(`✅ 从git镜像: ${source} 获取到广告基础配置`);
                     return configData;
                 } catch (parseError) { throw new Error(`JSON解析失败: ${parseError.message}`); }
             } catch (error) { lastError = error; continue;}
@@ -219,11 +235,14 @@
                 '.activity-m-v1', // 评论区上方活动推广
                 '.reply-notice', // 动态评论区提醒条
             ],
-            // 4. 直播间礼物 (Live -> Gift)
-            liveGift: [
+            // 4.1 直播间礼物栏 (Live -> GiftBar)
+            liveGiftBar: [
                 "gift-control-vm", // 下方送礼栏
                 ".gift-control-section",
                 '.gift-menu-root', // 礼物列表
+            ],
+            // 4.2 直播间聊天栏送礼物提示 (Live -> GiftTip)
+            liveGiftTip: [
                 '.live-room-app .app-body .aside-area .chat-history-panel .chat-items .chat-item.gift-item', // 聊天栏礼物消息
             ],
             // 5. 直播间推荐 (Live -> Recommend)
@@ -257,7 +276,7 @@
             if (userSettings.global.sub.nav.enable) {
                 selectorsToApply.push(...rules.nav);
             }
-            // 侧边栏 (视频页 或 动态页)
+            // 侧边栏 (视频页 或 动态页热搜)
             if (userSettings.global.sub.sidebar.enable) {
                 if (isVideoPage || isDynamicPage) {
                     selectorsToApply.push(...rules.sidebar);
@@ -278,7 +297,10 @@
 
         // 直播间开关检查
         if (isLivePage && userSettings.live.enable) {
-            if (userSettings.live.sub.gift.enable) selectorsToApply.push(...rules.liveGift);
+            if (userSettings.live.sub.giftBar.enable) selectorsToApply.push(...rules.liveGiftBar);
+
+            if (userSettings.live.sub.giftTip.enable) selectorsToApply.push(...rules.liveGiftTip);
+
             if (userSettings.live.sub.recommend.enable) selectorsToApply.push(...rules.liveRecommend);
 
             if (userSettings.live.sub.rank.enable) {
@@ -307,88 +329,6 @@
             if (element) {
                 if (selector === '.bili-mini-mask') {
                     if (window.getComputedStyle(element).display !== 'none') hideItem(element);
-                } else {
-                    hideItem(element);
-                }
-            }
-        }
-    }
-
-    function hideUnwantedElements2() {
-        // 分组规则：按页面类型
-        const rules = {
-            common: [
-                'li.v-popover-wrap.left-loc-entry', //上方导航条末尾，可能是广告/节日/专题
-                'ul.left-entry > li.v-popover-wrap:last-child', // 上方导航条最后的“下载客户端”
-                'ul.right-entry > .vip-wrap', //顶部右侧 大会员按钮
-            ],
-            video: [
-                ".video-page-game-card-small", //右侧栏推荐视频列表上方广告
-                '.video-page-special-card-small', //右侧卡片栏混入的特殊卡片链接
-                '.video-share-wrap', // 视频页面分享按钮
-                '.video-card-ad-small', // 弹幕列表下方 视频卡片形式的小广告
-                '.slide-ad-exp', //右侧上方弹幕列表下方的广告块
-                '.ad-report.strip-ad', // 视频下方 广告上报/“不喜欢”按钮
-                '.activity-m-v1', //评论区上方活动推广条
-                '.bili-mini-mask', // 视频区域的登录提示遮罩
-            ],
-            dynamic: [
-                'bili-dyn-home--member .right',
-                '.bili-dyn-banner', //动态右侧社区公告
-                'aside.right > section > .bili-dyn-banner',
-                '.bili-dyn-search-trendings', //动态右侧热搜，毫无营养
-                '.reply-notice', //动态页面评论区上方提醒条
-                ".bili-dyn-version-control__reminding", //动态页面新版导航提醒
-            ],
-            live: [
-                "gift-control-vm", //直播界面下方送礼栏
-                ".gift-control-section", //直播界面下方送礼栏
-                '.room-info-ctnr', //直播界面下面推荐直播4x2
-                '.gift-menu-root', //直播窗口内礼物列表
-                //"rank-list-vm", //直播界面上方榜单
-                //".rank-list-section", //直播界面上方榜单
-                'rank-list-ctnr-box .tab-content.ts-dot-2',
-                '.live-room-app .app-body .aside-area .chat-history-panel .chat-items .chat-item.gift-item', //直播聊天栏礼物
-            ]
-        };
-
-        const { hostname, pathname } = location;
-        const isVideoPage = pathname.startsWith('/video/');
-        const isDynamicPage = hostname === 't.bilibili.com' || pathname.startsWith('/opus/');
-        const isLivePage = hostname === 'live.bilibili.com' || pathname.startsWith('/live/');
-
-        let selectorsToApply = [...rules.common];
-
-        if (isVideoPage) {
-            selectorsToApply.push(...rules.video);
-        } else if (isDynamicPage) {
-            selectorsToApply.push(...rules.dynamic);
-        } else if (isLivePage) {
-            selectorsToApply.push(...rules.live);
-
-            const parentElement = document.getElementById('rank-list-vm');
-            const childElement = document.getElementById('rank-list-ctnr-box');
-            const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
-            if ( scrollbarHeight ) scrollbarHeight.style.height = '432px';
-
-            if (parentElement && childElement) {
-                let height = parseFloat(window.getComputedStyle(childElement).height);
-                if (!parentElement.dataset.heightModified) {
-                    height = height / 3 - 1;
-                }
-                parentElement.style.height = `${height}px`;
-                childElement.style.height = `${height}px`;
-                parentElement.dataset.heightModified = 'true';
-            }
-        }
-
-        for (const selector of selectorsToApply) {
-            const element = document.querySelector(selector);
-            if (element) {
-                if (selector === '.bili-mini-mask') {
-                    if (window.getComputedStyle(element).display !== 'none') {
-                        hideItem(element);
-                    }
                 } else {
                     hideItem(element);
                 }
@@ -1235,12 +1175,17 @@
         log('✅ 主导航观察器已启动');
     }
 
-function injectBiliInterceptor() {
+    function injectBiliInterceptor() {
         const interceptorLogic = `
         (function() {
+            // 防重复注入
+
+            if (window.__biliInterceptorInjected) return;
+            window.__biliInterceptorInjected = true;
+            const originalFetch = window.fetch;
+
             console.log('[BiliCleaner] 🚀 网络拦截器已加载');
 
-            const originalFetch = window.fetch;
             const targetDynUrl = '/x/polymer/web-dynamic/v1/feed/all';
             const targetReplyUrl = '/x/v2/reply/wbi/main';
 
