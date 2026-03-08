@@ -2,7 +2,7 @@
 // @name             BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version       2.32-lite
+// @version       2.33-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -19,7 +19,8 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
 // @run-at       document-start
-// @icon          https://i0.hdslb.com/bfs/static/jinkela/long/images/favicon.ico
+// @icon https://i2.hdslb.com/bfs/emote/3087d273a78ccaff4bb1e9972e2ba2a7583c9f11.png
+// @icon2          https://i0.hdslb.com/bfs/static/jinkela/long/images/favicon.ico
 // @require      https://cdn.jsdelivr.net/npm/protobufjs@7.3.0/dist/protobuf.min.js
 // @require      https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
 // @noframes
@@ -243,6 +244,7 @@
             // 规则三：时间段检查
             const start = timeToSeconds(state.adTime.start);
             const end = timeToSeconds(state.adTime.end);
+
             const isInAdSegment = currentTime >= start && currentTime <= end;
 
             // 【最终决策】
@@ -252,7 +254,6 @@
             }
         }
     }
-
 
     function JumpAndShowNotice(video, start, end, now) {
         log(` ⏩ 跳转 %c${formatTimeTenths(start)} --> ${formatTimeTenths(end)}`, 'color: #e77222; font-weight: bold;');
@@ -1448,24 +1449,15 @@ ${subtitles.join('\n')}
         }
     }
 
-
-    function extractTimestampFromString(content) {
-        if (!content) return null;
-        const match = content.match(/(\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?|\d{1,2}:\d{2}(?:\.\d+)?)[^\d]+(\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?|\d{1,2}:\d{2}(?:\.\d+)?)/);
-        if (!match) return null;
-        try {
-            const s = timeToSeconds(match[1]);
-            const e = timeToSeconds(match[2]);
-            return {
-                start: formatTimeTenths(s),
-                end: formatTimeTenths(e)
-            };
-        } catch {
-            return {
-                start: match[1],
-                end: match[2]
-            };
-        }
+    function extractTimestampFromString(timestamp_range) {
+        if (!timestamp_range) return null;
+        const times = timestamp_range.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?/g);
+        if (!times || times.length < 2) return null;
+        log(timestamp_range, times[0], times[1]);
+        return {
+            start: times[0],
+            end: times[1]
+        };
     }
 
     function timeToSeconds(timestamp) {
@@ -1508,17 +1500,21 @@ ${subtitles.join('\n')}
             return input;
         }
     }
+
     function formatTimeTenths(seconds) {
         if (typeof seconds !== 'number' || isNaN(seconds)) return '';
-        const total = Math.round(seconds * 10) / 10;
-        const hrs = Math.floor(total / 3600);
-        const mins = Math.floor((total % 3600) / 60);
-        const secs = Math.round((total % 60) * 10) / 10;
+
+        const tenths = Math.round(seconds * 10);
+
+        const hrs = Math.floor(tenths / 36000);
+        const mins = Math.floor((tenths % 36000) / 600);
+        const secs = ((tenths % 600) / 10).toFixed(1);
+
         const mm = mins.toString().padStart(2, '0');
-        const ss = (secs < 10 ? '0' : '') + secs.toFixed(1);
+        const ss = secs.padStart(4, '0');
+
         if (hrs > 0) {
-            const hh = hrs.toString();
-            return `${hh}:${mm}:${ss}`;
+            return `${hrs}:${mm}:${ss}`;
         }
         return `${mm}:${ss}`;
     }
@@ -1882,7 +1878,7 @@ ${subtitles.join('\n')}
         // --- 2. 定义所有数据源和配置 ---
         const aiOptions = [
             {value: 'aliyun', text: '阿里云（平台）', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-                 model: ['qwen-plus', 'qwen-plus-latest', 'deepseek-v3.1','deepseek-v3', 'Moonshot-Kimi-K2-Instruct','glm-4.5','glm-4.5-air']
+             model: ['qwen-plus', 'qwen-plus-latest', 'deepseek-v3.1','deepseek-v3', 'Moonshot-Kimi-K2-Instruct','glm-4.5','glm-4.5-air']
             },
             { value: 'deepseek', text: '深度求索 DeepSeek', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-chat'] },
             {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: ['kimi-k2-0905-preview','kimi-k2-0711-preview', 'kimi-k2.5', 'moonshot-v1-32k', 'moonshot-v1-8k' ] },
