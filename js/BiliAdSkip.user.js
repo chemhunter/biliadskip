@@ -19,8 +19,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
 // @run-at       document-start
-// @icon https://i2.hdslb.com/bfs/emote/3087d273a78ccaff4bb1e9972e2ba2a7583c9f11.png
-// @icon2          https://i0.hdslb.com/bfs/static/jinkela/long/images/favicon.ico
+// @icon       https://i2.hdslb.com/bfs/emote/3087d273a78ccaff4bb1e9972e2ba2a7583c9f11.png
 // @require      https://cdn.jsdelivr.net/npm/protobufjs@7.3.0/dist/protobuf.min.js
 // @require      https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
 // @noframes
