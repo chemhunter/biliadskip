@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      2.02
+// @version      2.03
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -165,7 +165,7 @@
             const localConfigStr = localStorage.getItem("localConfig");
             const localConfig = localConfigStr ? JSON.parse(localConfigStr) : null;
             const lastUpdateTime = localConfig && localConfig.time || 0;
-            if ( Date.now() - lastUpdateTime >= 3600 * 24 * 1000) {
+            if (Date.now() - lastUpdateTime >= 24 * 3600 * 1000) {
                 const res = await getConfigWithFallback();
                 if (res) {
                     log(`⚙️ 配置信息:`, res);
@@ -234,16 +234,18 @@
                 '.ad-report.strip-ad', // 视频下方广告上报条
                 '.activity-m-v1', // 评论区上方活动推广
                 '.reply-notice', // 动态评论区提醒条
+                '.w-100.over-hidden.p-relative.flip-view', // 直播间下方广告横条
             ],
             // 4.1 直播间礼物栏 (Live -> GiftBar)
             liveGiftBar: [
-                "gift-control-vm", // 下方送礼栏
-                ".gift-control-section",
+                'gift-control-vm', // 下方送礼栏
+                '.gift-control-section', //
                 '.gift-menu-root', // 礼物列表
             ],
             // 4.2 直播间聊天栏送礼物提示 (Live -> GiftTip)
             liveGiftTip: [
-                '.live-room-app .app-body .aside-area .chat-history-panel .chat-items .chat-item.gift-item', // 聊天栏礼物消息
+                '.live-room-app .app-body .aside-area .chat-history-panel .chat-history-list .chat-items .gift-item', // 聊天栏礼物消息 .chat-item
+                '.border-box.convention-msg.chat-item', //直播间上方红字系统防骗提醒
             ],
             // 5. 直播间推荐 (Live -> Recommend)
             liveRecommend: [
@@ -255,10 +257,6 @@
                 // "rank-list-vm", // (原代码注释掉的，如需开启可解注)
                 // ".rank-list-section",
             ],
-            // 7. 杂项/遮罩 (Global -> Sidebar 或 独立)
-            misc: [
-                //'.bili-mini-mask', // 登录遮罩
-            ]
         };
 
         const { hostname, pathname } = location;
@@ -282,10 +280,6 @@
                     selectorsToApply.push(...rules.sidebar);
                 }
             }
-            // 登录遮罩 (默认归类到侧边栏或始终开启，这里跟随sidebar)
-            if (userSettings.global.sub.sidebar.enable) {
-                selectorsToApply.push(...rules.misc);
-            }
         }
 
         // 评论区开关检查
@@ -308,14 +302,12 @@
                 // 直播间榜单高度调整逻辑
                 const parentElement = document.getElementById('rank-list-vm');
                 const childElement = document.getElementById('rank-list-ctnr-box');
-                const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
-                if ( scrollbarHeight ) scrollbarHeight.style.height = '432px';
+                // const scrollbarHeight = document.getElementById('.ps__scrollbar-y-rail');
+                // if ( scrollbarHeight ) scrollbarHeight.style.height = '432px';
 
                 if (parentElement && childElement) {
                     let height = parseFloat(window.getComputedStyle(childElement).height);
-                    if (!parentElement.dataset.heightModified) {
-                        height = height / 3 - 1;
-                    }
+                    height = !parentElement.dataset.heightModified ? height/3 - 1 : height;
                     parentElement.style.height = `${height}px`;
                     childElement.style.height = `${height}px`;
                     parentElement.dataset.heightModified = 'true';
@@ -327,11 +319,7 @@
         for (const selector of selectorsToApply) {
             const element = document.querySelector(selector);
             if (element) {
-                if (selector === '.bili-mini-mask') {
-                    if (window.getComputedStyle(element).display !== 'none') hideItem(element);
-                } else {
-                    hideItem(element);
-                }
+                hideItem(element);
             }
         }
     }
