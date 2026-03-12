@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      2.03
+// @version      2.04
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -30,11 +30,12 @@
     let hiddenAdCount = 0;
     let lastActiveUpName = null;
     let setMainWidth = false;
+    let liveGiftObserver = null;
 
     // --- 1. 定义默认配置与用户设置 (细化版) ---
     const defaultSettings = {
         global: {
-            label: "📺 全局与首页_屏蔽项",
+            label: "🖥️ 全局与首页_屏蔽项",
             enable: true,
             sub: {
                 swipe: { label: "首页大屏轮播", enable: true },
@@ -54,7 +55,7 @@
             }
         },
         comment: {
-            label: "💬 评论区_屏蔽项",
+            label: "📺 视频评论区_屏蔽项",
             enable: true,
             sub: {
                 adBlock: { label: "评论区置顶广告", enable: true },
@@ -65,10 +66,10 @@
             label: "🎥 直播间_屏蔽项",
             enable: true,
             sub: {
-                rank: { label: "评论区上方榜单", enable: true },
-                giftTip: { label: "聊天栏送礼提示", enable: true },
-                giftBar: { label: "下方礼物栏", enable: true },
-                recommend: { label: "下方直播推荐", enable: true }
+                rank: { label: "上方榜单精简", enable: true },
+                giftTip: { label: "聊天栏礼物播报", enable: true },
+                giftBar: { label: "下方礼物栏隐藏", enable: true },
+                recommend: { label: "下方直播推荐隐藏", enable: true }
             }
         }
     };
@@ -291,12 +292,10 @@
 
         // 直播间开关检查
         if (isLivePage && userSettings.live.enable) {
+            initLiveCleaner();
             if (userSettings.live.sub.giftBar.enable) selectorsToApply.push(...rules.liveGiftBar);
-
             if (userSettings.live.sub.giftTip.enable) selectorsToApply.push(...rules.liveGiftTip);
-
             if (userSettings.live.sub.recommend.enable) selectorsToApply.push(...rules.liveRecommend);
-
             if (userSettings.live.sub.rank.enable) {
                 selectorsToApply.push(...rules.liveRank);
                 // 直播间榜单高度调整逻辑
@@ -322,6 +321,38 @@
                 hideItem(element);
             }
         }
+    }
+
+    function initLiveCleaner() {
+        if (userSettings.live.sub.giftTip.enable) {
+            observeLiveGiftTips();
+        }
+    }
+
+    function stopLiveCleaner() {
+        if (liveGiftObserver) {
+            liveGiftObserver.disconnect();
+            liveGiftObserver = null;
+        }
+    }
+
+    function observeLiveGiftTips() {
+        if (liveGiftObserver) return;
+        const container = document.querySelector('.live-room-app .app-body .aside-area .chat-items');
+        if (!container) return;
+        // 先清理已有礼物消息
+        container.querySelectorAll('.chat-item.gift-item').forEach(hideItem);
+        liveGiftObserver = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType !== 1) return;
+                    if (node.classList.contains('gift-item')) {
+                        hideItem(node);
+                    }
+                });
+            }
+        });
+        liveGiftObserver.observe(container, { childList: true });
     }
 
     // 检查评论区
@@ -755,8 +786,8 @@
     }
 
     function initObserver() {
-        const mainObserver = new MutationObserver(debounce(checkForContentToHide, 250));
-        mainObserver.observe(document.body,{ childList: true, subtree: true, });//attributes: true, attributeFilter: ['class']
+        const mainObserver = new MutationObserver(debounce(checkForContentToHide, 300));
+        mainObserver.observe(document.body,{ childList: true, subtree: true, });
         return mainObserver;
     }
 
@@ -1121,8 +1152,9 @@
             saveSettings();
             document.body.removeChild(backdrop);
             document.body.removeChild(container);
-            checkForContentToHide();
+            //checkForContentToHide();
             showMessage("设置已保存");
+            reinitializeAllObservers();
         };
         closeBtn.onclick = closeAction;
         backdrop.onclick = closeAction;
@@ -1139,6 +1171,7 @@
         if (window.MyObserver) window.MyObserver.disconnect();
         if (commentAppObserver) commentAppObserver.disconnect();
         if (dynamicPanelObserver) dynamicPanelObserver.disconnect();
+        stopLiveCleaner();
 
         // 2. 重新运行所有初始化逻辑
         window.MyObserver = initObserver();
