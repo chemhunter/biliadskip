@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      2.5.0
+// @version      2.5.1
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -87,7 +87,7 @@
 
             // 创建新的分类对象，以默认分类为基础
             result[key] = {
-                label: defaultCategory.label, // 始终使用最新 label
+                label: defaultCategory.label,
                 enable: storedCategory && typeof storedCategory.enable === 'boolean' ? storedCategory.enable : defaultCategory.enable,
                 sub: {}
             };
@@ -1307,9 +1307,16 @@
             }
 
             function filterNav(json, settings, whiteList, keywordRegex) {
-                if (!json?.data?.items || !settings?.dynamic?.enable || !settings?.dynamic?.sub?.goods?.enable) {
+                let items = json?.data?.items ?? json?.items;
+                if (!items) return json;
+
+                const goodsEnabled = settings?.dynamic?.sub?.goods?.enable !== false;
+                const popupEnabled = settings?.dynamic?.sub?.popup?.enable !== false;
+                if (!goodsEnabled || !popupEnabled) {
+                    console.log('[BiliCleaner] ⏭️ 导航动态过滤跳过: goods=%o, popup=%o', goodsEnabled, popupEnabled);
                     return json;
                 }
+
                 const originalCount = json.data.items.length;
                 json.data.items = json.data.items.filter(item => {
                     // 白名单检查（作者名）
