@@ -1,6 +1,8 @@
 *
 !api/
+!js/
 !index.html
 !package.json
 !vercel.json
 !package-lock.json
+
