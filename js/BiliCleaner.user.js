@@ -2,7 +2,7 @@
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
 // @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页
-// @version      2.6.0
+// @version      2.6.2
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -78,9 +78,8 @@
     };
 
     function synchronizeSettings(defaults, stored) {
-        // 如果 stored 不是对象或为空，则直接复制 defaults 的副本
         if (!stored || typeof stored !== 'object') {
-            return JSON.parse(JSON.stringify(defaults)); // 深拷贝
+            return JSON.parse(JSON.stringify(defaults));
         }
 
         const result = {};
@@ -88,7 +87,6 @@
             const defaultCategory = defaults[key];
             const storedCategory = stored[key];
 
-            // 创建新的分类对象，以默认分类为基础
             result[key] = {
                 label: defaultCategory.label,
                 enable: storedCategory && typeof storedCategory.enable === 'boolean' ? storedCategory.enable : defaultCategory.enable,
@@ -137,6 +135,9 @@
     };
 
     function migrateFromLocalStorage() {
+        //防止重复无效迁移
+        if (localStorage.getItem('biliCleanerConfigMigrated', null)) return;
+
         const keysConfig = {
             'biliCleanerSettings': { type: 'object', strategy: 'overwrite_if_empty', targetKey: 'biliCleanerSettings'},
             'biliUpWhiteList': { type: 'array', strategy: 'union', targetKey: 'biliUpWhiteList' },
@@ -188,16 +189,14 @@
             }
 
             storage.set(targetKey, merged);
-            //localStorage.removeItem(oldKey);
             console.log(`[BiliCleaner] ✅ 已迁移并合并 localStorage.${oldKey} -> GM.${targetKey}`);
         }
+        localStorage.setItem('biliCleanerConfigMigrated', true);
     }
 
-    //let stored = JSON.parse(localStorage.getItem('biliCleanerSettings')) || {};
     userSettings = synchronizeSettings(defaultSettings, storage.get('biliCleanerSettings', {}));
 
     function saveSettings() {
-        //localStorage.setItem('biliCleanerSettings', JSON.stringify(userSettings));
         storage.set('biliCleanerSettings', userSettings);
     }
 
@@ -207,27 +206,44 @@
         time: 0
     };
 
-    async function fetchConfigFromGit() {
+    async function fetchConfigFromGit(timeoutMs = 1500) { // 可配置超时时间，默认1000ms
         let lastError = null;
         const gitMirror = [
-            'https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/biliadwordslinks.json', //https://purge.jsdelivr.net/link 刷新缓存
+            'https://cdn.jsdelivr.net/gh/chemhunter/biliadskip@main/biliadwordslinks.json',
             'https://raw.githubusercontent.com/chemhunter/biliadskip/main/biliadwordslinks.json',
         ];
 
         for (const source of gitMirror) {
             const url = `${source}?t=${Date.now()}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
             try {
-                const response = await fetch(url);
-                if (!response.ok) {throw new Error(`HTTP错误! 状态码: ${response.status}`)};
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP错误! 状态码: ${response.status}`);
+                }
                 const text = await response.text();
                 try {
                     const configData = JSON.parse(text);
                     log(`✅ 从git镜像: ${source} 获取到广告基础配置`);
                     return configData;
-                } catch (parseError) { throw new Error(`JSON解析失败: ${parseError.message}`); }
-            } catch (error) { lastError = error; continue;}
+                } catch (parseError) {
+                    throw new Error(`JSON解析失败: ${parseError.message}`);
+                }
+            } catch (error) {
+                clearTimeout(timeoutId);
+                lastError = error;
+                if (error.name === 'AbortError') {
+                    console.warn(`镜像源 ${source} 请求超时 (${timeoutMs}ms)，尝试下一个...`);
+                } else {
+                    console.warn(`镜像源 ${source} 请求失败:`, error.message);
+                }
+                continue;
+            }
         }
-
         throw new Error(`所有镜像源均无法访问: ${lastError?.message || '未知错误'}`);
     }
 
@@ -238,9 +254,9 @@
                 return res;
             } catch (error) {
                 console.error(`尝试 ${attempt} 失败:`, error.message);
-                if (attempt === maxRetries) {
-                    console.warn('⚠️ 所有尝试均失败，使用默认配置');
-                    return;
+                if (attempt >= maxRetries) {
+                    console.warn('⚠️ 所有尝试均失败，将使用本地缓存或默认配置');
+                    return null;
                 }
                 await new Promise(resolve => setTimeout(resolve, 500 * attempt));
             }
@@ -250,8 +266,6 @@
 
     async function getAdWordsConfig() {
         try {
-            //const localConfigStr = localStorage.getItem("localConfig");
-            //const localConfig = localConfigStr ? JSON.parse(localConfigStr) : null;
             const localConfig = storage.get('localConfig', null);
             const lastUpdateTime = localConfig && localConfig.time || 0;
             if (Date.now() - lastUpdateTime >= 24 * 3600 * 1000) {
@@ -265,9 +279,15 @@
                     };
                     localStorage.setItem("localConfig", JSON.stringify(biliAdWordsConfig));
                     storage.set('localConfig', biliAdWordsConfig);
+                } else {
+                    log(`git读取失败,读取本地广告词缓存`);
+                    biliAdWordsConfig = {...localConfig};
+                    if (!biliAdWordsConfig.time) {
+                        biliAdWordsConfig = defaultConfig;
+                    }
                 }
             } else {
-                log(`读取本地广告词缓存`);
+                log(`更新冷却中，读取本地广告词缓存`);
                 biliAdWordsConfig = {...localConfig};
                 if (!biliAdWordsConfig.time) {
                     biliAdWordsConfig = defaultConfig;
@@ -1378,7 +1398,10 @@
             if (origText) textParts.push(origText);
         }
 
-        return textParts.filter(t => t && typeof t === 'string').join(',');
+       // 合并所有文本，并过滤掉表情
+        const rawText = textParts.filter(t => t && typeof t === 'string').join(';');
+        const filteredText = rawText.replace(/\[[^\[\]\s]+\]/g, '');
+        return filteredText;
     }
 
     function getMatchedAdKeywords(text) {
@@ -1425,11 +1448,6 @@
             const authorName = item.modules?.module_author?.name || '未知用户';
             if (authorName && whiteList?.includes(authorName)) return true;
             const pubTime = item.modules?.module_author?.pub_time || '';
-
-            //if (item.type === 'DYNAMIC_TYPE_AV') {
-            //    console.log('[BiliCleaner] 💹类型放行：', authorName, pubTime, item.type, jump_url);
-            //    return true;
-            //}
 
             const jump_url = 'https:' + (item.basic?.jump_url || item.modules?.module_dynamic?.major?.archive?.jump_url || item.orig?.basic?.jump_url)
             if (isLotteryDynamic(item)) {
@@ -1609,7 +1627,6 @@
         script.textContent = `window.__biliCleanerConfig = ${JSON.stringify(config)};`;
         (document.head || document.documentElement).appendChild(script);
         script.remove();
-        log('脚本配置已写入页面全局对象');
     }
 
     async function initApp() {
