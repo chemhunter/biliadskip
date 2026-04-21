@@ -2,7 +2,7 @@
 // @name             BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version       2.33-lite
+// @version       2.34-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -28,13 +28,15 @@
 (function() {
     'use strict';
 
-    const SHOW_DEBUG_LOG = false;
-    const SHOW_DEBUG_TIMEGAP = false;
-    const FORCE_GIT_CONFIG = false;
-    const FORCE_AI_ACTIVE = true;
-    const DOWNLOAD_SUBTITLE_FILE = false;
-    const SHORT_VIDEO_DURATION = 150;
-    const ANALYZE_DNAMAKU = null;
+    // 调试开关
+    const SHOW_DEBUG_LOG = false; // 输出debug日志
+    const SHOW_DEBUG_TIMEGAP = false; // 输出两条debug日志之间的间隔时间
+    const FORCE_GIT_CONFIG = false; // 强制每个页面重新从git镜像获取最新关键词
+    const FORCE_AI_ACTIVE = true; // 强制启用AI分析
+    const DOWNLOAD_SUBTITLE_FILE = false; // 下载视频字幕文件到本地
+    const SHORT_VIDEO_DURATION = 150; // 短视频时长评判依据，单位/s
+    const backupIntervals = 3; // 备份脚本数据到本地的周期，默认3，最小1，单位/天
+    const ANALYZE_DNAMAKU = null; // 统计该文本弹幕的数量
 
     // 公共AI平台 supabase || vercel
     const cloudPlatformService = 'supabase';
@@ -72,7 +74,7 @@
     const state = { ...defaultState };
 
     const defaultConfig = {
-        keywordStr: `[淘某]宝|京东|天猫|美团|拼多|并夕|外卖|转转|补贴|折扣|福利|专属|下单|退款|免费|大促|[心快速]冲|运(费?)险|[领惠叠]券|[低底特好性差降保]价`,
+        keywordStr: `[淘某]宝|京东|天猫|美团|拼多|并夕|外卖|密令|转转|补贴|折扣|福利|[下晒]单|退款|免费|大[促额漏水]|[心快速]冲|运(费?)险|[领惠叠]券|[低底特好性差降保]价`,
         biliAdLinks: ['taobao.com', 'tb.cn', 'jd.com', 'pinduoduo.com','zhuanzhuan.com', 'mall.bilibili.com', 'gaoneng.bilibili.com', 'bilibili.com/cheese/', 'b23.tv/mall-'],
         noticeAudioBase64: null,
         time: 0
@@ -821,9 +823,7 @@
     }
 
 
-    /**
-             * (最终优雅版) 纯粹的广告检测器：接收文本和链接字符串数组，返回分析结果。
-             */
+    /*** 纯粹的广告检测器：接收文本和链接字符串数组，返回分析结果  */
     function singleFuncForAd({ linkHrefs, commentText, goods = '' }) {
         let hasAd = undefined;
         let reason = null;
@@ -1178,7 +1178,7 @@
                 await markVideoAsNoAd(bvNumber, {upload: true, reason: aiResultJson.source || 'kimi'});
             } else {
                 //有时间戳，本地保存 + 共享上传
-                log(` 🎯 AI返回: %c${aiResultJson.start}-${aiResultJson.end}`, 'color: #3498db; font-weight: bold;');
+                log(` 🎯 AD: %c${aiResultJson.start}-${aiResultJson.end}, ${aiResultJson.product}`, 'color: #3498db; font-weight: bold;');
                 playBeepSound(1100);
                 const finalOptions = { ...options, saveTimestamp: true, uploadCloud: true };
                 monitorTimestamp(bvNumber, aiResultJson, aiResultJson.source, finalOptions);
@@ -1402,7 +1402,7 @@ ${subtitles.join('\n')}
 
             const rawData = await response.json();
             //debuglog('🤖AI返回原始数据：', rawData);
-            let aiRespText = "";
+            let aiRespText;
 
             if (isGemini) {
                 // Gemini 的路径: data.candidates[0].content.parts[0].text
@@ -1413,6 +1413,7 @@ ${subtitles.join('\n')}
             }
 
             if (!aiRespText) throw new Error('AI 返回数据为空');
+            debuglog(`🤖AI返回数据：`, aiRespText );
 
             // --- 6. 核心修改：直接解析JSON
             const aiModel = rawData.model || aiModel;
@@ -1421,7 +1422,7 @@ ${subtitles.join('\n')}
                 const jsonMatch = aiRespText.match(/```json\n([\s\S]*?)\n```|({[\s\S]*})/);
                 if (!jsonMatch) throw new Error("AI回复中未找到有效的JSON代码块");
                 aiResultJson= JSON.parse(jsonMatch[1] || jsonMatch[2]);
-                log(`🤖AI返回数据`, aiResultJson );
+                debuglog(`🤖提取json：`, aiResultJson );
             } catch (e) {
                 console.error("❌ JSON解析失败!", "原始回复:", aiRespText, "错误:", e);
                 return { status: 500, json: { error: 'AI返回的不是有效的JSON', raw: aiRespText } };
@@ -1432,13 +1433,14 @@ ${subtitles.join('\n')}
                 aiResultJson.source = aiModel;
                 return aiResultJson;
             } else if (aiResultJson.start && aiResultJson.end) {
+                const product = aiResultJson.product || "unknown"
                 // 归一化到 0.1s 精度（保持字符串格式）
                 try {
                     const s = timeToSeconds(aiResultJson.start);
                     const e = timeToSeconds(aiResultJson.end);
-                    return { start: formatTimeTenths(s), end: formatTimeTenths(e), source: aiModel };
+                    return { start: formatTimeTenths(s), end: formatTimeTenths(e), source: aiModel, product };
                 } catch {
-                    return { start: aiResultJson.start, end: aiResultJson.end, source: aiModel };
+                    return { start: aiResultJson.start, end: aiResultJson.end, source: aiModel, product };
                 }
             } else {
                 throw new Error('AI返回的JSON内容无效');
@@ -2425,16 +2427,16 @@ ${subtitles.join('\n')}
     /** 将UP主添加到白名单，并立即更新当前页面的运行状态以停止所有监控。 */
     async function addUpToWhitelistAndUpdateState(upName) {
         if (!upName || typeof upName !== 'string' || upName.trim() === '') {
-            debuglog("无效的UP主昵称，无法添加到白名单。");
+            debuglog(`无效昵称，无法添加到UP主白名单`);
             return;
         }
 
         if (whiteList.includes(upName)) {
-            debuglog(` UP主 [${upName}] 已在白名单中，无需重复添加。`);
+            debuglog(`  [${upName}] 已在UP主白名单中，无需重复添加。`);
             return;
         }
 
-        log(`➕ 将UP主 [${upName}] 添加到白名单...`);
+        log(` [${upName}] 添加到UP主白名单...`);
         // 1. 更新白名单 (内存、GM存储、localStorage备份)
         whiteList.push(upName);
         await GM_setValue('biliUpWhiteList', whiteList);
@@ -2458,7 +2460,7 @@ ${subtitles.join('\n')}
     async function removeUpFromWhitelist(upName) {
         const index = whiteList.indexOf(upName);
         if (index > -1) {
-            log(`➖ 将UP主 [${upName}] 从白名单中移除...`);
+            log(`从UP主白名单中移除[${upName}]`);
             whiteList.splice(index, 1);
             await GM_setValue('biliUpWhiteList', whiteList);
             localStorage.setItem('biliUpWhiteList_Backup', JSON.stringify(whiteList));
@@ -2769,8 +2771,9 @@ ${subtitles.join('\n')}
     }
 
 
-    /** 弹幕心跳处理器。*/
+    /** 弹幕心跳处理器 */
     async function processDanmakuHeartbeat() {
+        log("🩷 Danmaku 心跳 ...");
         if ( !state.video || (state.video && state.video.paused) || state.noAd || state.adTime) {
             danmakuManager.stop();
             return;
@@ -2855,7 +2858,6 @@ ${subtitles.join('\n')}
                                 stopInternal();
                                 return;
                             }
-                            log("🩷 Danmaku 心跳 ...");
                             processDanmakuHeartbeat();
                         }, 1500);
                     }
@@ -3225,6 +3227,11 @@ ${subtitles.join('\n')}
 
         debuglog(' -> 加载UP白名单...');
         whiteList = await GM_getValue('biliUpWhiteList', []);
+        const rawBackup = localStorage.getItem('biliUpWhiteList_Backup');
+        const whiteListBackup = rawBackup ? JSON.parse(rawBackup) : [];
+        if (whiteListBackup.length > whiteList.length ) {
+            whiteList = whiteListBackup;
+        }
         debuglog('✅ 数据加载完成');
     }
 
@@ -3312,7 +3319,7 @@ ${subtitles.join('\n')}
 
     /** (修复版) 导出所有GM存储数据（包含视频详情）为一个JSON文件，并触发下载。*/
     async function exportAllDataAsJson() {
-        log('🛡️ 准备导出数据库全量备份 (结构优化版)...');
+        log('🛡️ 准备导出数据库备份 ...');
         try {
             const allKeys = await GM_listValues();
             const backupData = {
@@ -3375,7 +3382,7 @@ ${subtitles.join('\n')}
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            log(`✅ 备份成功！包含 ${videoCount} 个视频数据，${configCount} 项配置。`);
+            log(`✅ 备份成功！包含 ${videoCount} 个视频数据，${configCount} 项配置`);
 
         } catch (e) {
             console.error("❌ 导出数据时发生错误:", e);
@@ -3640,7 +3647,7 @@ ${subtitles.join('\n')}
         return null;
     }
 
-    /** * (带详细日志) 通过模拟B站客户端的加载逻辑，获取一个视频的全部弹幕。 */
+    /*** (带详细日志) 通过模拟B站客户端的加载逻辑，获取一个视频的全部弹幕。 */
     async function fetchAllDanmaku({ aid, cid, duration, danmakuCount, segmentLimit = Infinity }) {
         if (!aid || !cid || !duration) {
             console.error("[DanmakuFetcher] 必须提供 aid, cid, 和 duration。");
@@ -4069,7 +4076,7 @@ ${subtitles.join('\n')}
                 const text = await response.text();
                 try {
                     const configData = JSON.parse(text);
-                    debuglog(`✅ 从git镜像: ${source} 获取到广告基础配置`);
+                    debuglog(`✅ 获取到广告基础配置from git镜像: ${source} `);
                     return configData;
                 } catch (parseError) { throw new Error(`JSON解析失败: ${parseError.message}`); }
             } catch (error) { lastError = error; continue;}
@@ -4087,7 +4094,7 @@ ${subtitles.join('\n')}
                 console.error(`尝试 ${attempt} 失败:`, error.message);
                 if (attempt === maxRetries) {
                     console.warn('⚠️ 所有尝试均失败，使用默认配置');
-                    return;
+                    return null;
                 }
                 await randomSleep(500 * attempt);
             }
@@ -4096,27 +4103,24 @@ ${subtitles.join('\n')}
     }
 
     async function getScriptLocalConfig() {
-        const getStoredConfig = async () => {
-            try {
-                // GM_getValue 直接支持对象，无需 JSON.parse
-                return await GM_getValue("localConfig", null);
-            } catch (error) {
-                console.error('解析存储配置失败:', error);
-                return null;
-            }
-        }
-
         try {
-            let localConfig = await getStoredConfig();
-            const lastUpdatePassed = Date.now() - (localConfig?.time || 0);
-            const oneDayLong = 24 * 3600 * 1000;
-            if (lastUpdatePassed > oneDayLong * 3) {
-                log('每三天备份一次GM存储');
+            const localConfig = await GM_getValue("localConfig", null);
+            const backupTime = await GM_getValue("backupTime") || 0;
+            const lastBackupPassed = Date.now() - backupTime;
+            const intervalDays = Math.max(Math.floor(backupIntervals ?? 3), 1);
+            const ONE_DAY_MS = 24 * 3600 * 1000;
+
+            if (lastBackupPassed > intervalDays * ONE_DAY_MS) {
+                log(`每${backupIntervals}天备份一次GM存储`);
+                await GM_setValue("backupTime", Date.now());
                 await exportAllDataAsJson();
+            } else {
+                log(`本周期已备份GM存储，跳过`);
             }
 
             let fetchSuccess = false;
-            if (FORCE_GIT_CONFIG || lastUpdatePassed > oneDayLong) {
+            const lastUpdatePassed = Date.now() - (localConfig?.time || 0);
+            if (FORCE_GIT_CONFIG || lastUpdatePassed > ONE_DAY_MS) {
                 const res = await getConfigWithFallback();
                 if (res) {
                     debuglog(`⚙️ 云端配置更新成功:`, res);
@@ -4138,7 +4142,7 @@ ${subtitles.join('\n')}
                     biliAdWordsConfig = localConfig;
                 } else {
                     biliAdWordsConfig = defaultConfig;
-                    await GM_setValue("localConfig", defaultConfig);
+                    await GM_setValue("localConfig", biliAdWordsConfig);
                 }
             }
         } catch (error) {
