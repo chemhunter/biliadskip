@@ -74,40 +74,57 @@ async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, up_id }
     }
 }
 */
-let aiModelName
+
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitlesText, commentText ='') {
   const system_prompt = `
-你是一个精准的广告分析引擎。
-你的唯一任务是分析用户提供的视频字幕和评论区文本，判断其中是否包含商业广告，并返回一个结构化的JSON对象。
+你是一个精准的广告分析引擎，唯一任务是判断视频字幕中是否包含商业广告，并返回一个结构化 JSON。
 
-输入说明：
-- 字幕行通常为 "mm:ss.s-mm:ss.s 内容" 的格式，其中前者是该条字幕的开始时间(from)，后者是结束时间(to)，均为 0.1s 精度；
-- 如遇仅有单个时间戳的行（例如 "mm:ss 内容"），将其视为仅有起始时间的旧版本字幕。
+你必须**只返回一个 JSON 对象**，不能有任何前缀、后缀、解释或 Markdown 标记，且必须是紧凑的单行 JSON。
 
-输出要求（必须严格返回一个 JSON 对象）：
-- 必须包含字段：
-  - "start": 广告起始时间戳（"mm:ss.s" 或 "hh:mm:ss.s"），精度至少 0.1s；
-  - "end": 广告结束时间戳（"mm:ss.s" 或 "hh:mm:ss.s"），精度至少 0.1s；
-  - "noAd": 布尔值；如果确定无广告，则为 true；
-  - "product": 字符串；广告中推广的商品名称（无法判断可为 null）。
-- 若未发现广告，返回 {"start": null, "end": null, "product": null, "noAd": true}。
+输入格式：
+- 字幕行通常为 "mm:ss.s-mm:ss.s 内容"（from-to），精度 0.1s
+- 若只有单个时间戳如 "mm:ss 内容"，视为仅有起始时间
+- 还会提供视频标题和部分评论文本供参考（辅助判断，不作为主要依据）
 
-判定规则：
-1) 返回值必须是可被 JSON.parse() 解析的合法 JSON，且不要包含任何多余文字；
-2) 时间精度至少 0.1s，且使用 "mm:ss.s" 或 "hh:mm:ss.s" 格式；
-3) 广告区段边界由字幕区段决定：
-   - "start" = 第一条广告相关字幕的开始时间(from)；
-   - "end"   = 最后一条广告相关字幕的结束时间(to)；
-4) 将引入广告的话术也视为广告开始（如：“说到...就不得不提...” 等），并覆盖至广告收尾；
-5) 返回的区段要尽可能覆盖完整广告，不要遗漏；商业广告通常不少于 30 秒；
-6) 不涉及军用装备及法律禁止公开买卖的物品。
+输出字段（缺一不可）：
+- start: 广告起始时间戳，格式 "mm:ss.s"，必须从字幕中提取
+- end:   广告结束时间戳，格式 "mm:ss.s"，必须从字幕中提取
+- noAd:  布尔值，无广告时为 true
+- product: 推广的商品名称（无法确定则为 null）
+
+若未发现广告，必须返回：
+{"start":null,"end":null,"product":null,"noAd":true}
+
+广告判定规则：
+1. 输出必须能被 JSON.parse 直接解析，不包含任何额外字符。
+2. 时间精度至少 0.1s，并一律使用 "mm:ss.s" 格式（必要可延长至 "hh:mm:ss.s"）。
+3. 广告区段由字幕内容决定：
+   - start = 第一条广告相关字幕的 from 时间
+   - end   = 最后一条广告相关字幕的 to 时间
+4. 广告的开始信号包括但不限于：
+   - “今天给大家推荐/安利/分享一款...”
+   - “说到了...就不得不提...”
+   - 赞助冠名、口播植入的引导语
+   以上情况均应视为广告已开始。
+5. 广告的结束信号包括：“回归正题”“感谢观看，我们继续”或商品信息完全消失的时刻。
+6. 不要预设广告的最小长度，口播广告可能只有十几秒，请根据实际内容判断。
+7. 不涉及军用装备及法律禁止公开买卖的物品（如发现可忽略该段字幕）。
+8. 评论中出现大量重复的产品名可增加广告嫌疑，但最终以字幕为准。
+
+示例：
+字幕：
+00:05.0-00:09.0 说到洗面奶我最近发现一款特别好用的
+00:09.0-00:15.0 就是这款XX氨基酸洁面，洗完不紧绷
+00:15.0-00:20.0 链接我放评论区了
+输出：
+{"start":"00:05.0","end":"00:20.0","product":"XX氨基酸洁面","noAd":false}
 `
   const user_prompt = `
-以下是视频标题和评论文本，供你参考：\n
+以下是视频标题和评论文本：\n
 标题: ${title}\n
 评论: ${commentText}\n\n
-以下是截取的部分字幕：\n
+以下是字幕内容：\n
 ${subtitles.join('\n')}
 `;
 
@@ -118,39 +135,30 @@ ${subtitles.join('\n')}
     model: null,
     providerName: 'Kimi'
   }
-  const aliyunConfigString = process.env.ALIYUN;
-
-  if (aliyunConfigString) {
-      console.log('检测到 ALIYUN 环境变量，优先使用...');
-      try {
-          const aliyunConfig = JSON.parse(aliyunConfigString);
-          if (aliyunConfig.apiUrl && aliyunConfig.apikey && Array.isArray(aliyunConfig.model) && aliyunConfig.model.length > 0) {
-              AI_CONFIG.apiUrl = aliyunConfig.apiUrl;
-              AI_CONFIG.apiKey = aliyunConfig.apikey;
-              
-              const randomIndex = Math.floor(Math.random() * aliyunConfig.model.length);
-              AI_CONFIG.model = aliyunConfig.model[randomIndex];
-              
-              AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.model})`; // 更新提供商名称用于日志
-              console.log(`✅ 已从阿里云配置中加载，随机选择模型: ${AI_CONFIG.model}`);
-          } else {
-              throw new Error("ALIYUN 配置格式不完整（缺少apiUrl, apikey或model数组）。");
-          }
-      } catch (e) {
-          console.error("❌ 解析ALIYUN环境变量失败！将回退到默认配置。", e);
-          AI_CONFIG.apiUrl = null; 
-      }
+  
+  const aliyunKey = process.env.ALIYUN_API_KEY;
+  if (aliyunKey) {
+    console.log('检测到 ALIYUN，优先使用...');
+    const aliyunModel = ["qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-plus-2026-04-02","qwen3.6-plus"];
+    try {
+      AI_CONFIG.apiUrl = process.env.ALIYUN_API_URL;
+      AI_CONFIG.apiKey = aliyunKey;
+      AI_CONFIG.model = aliyunModel[0];
+      AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.model})`; // 更新提供商名称用于日志
+      console.log(`✅ 已加载阿里云第一个模型: ${AI_CONFIG.model}`);
+    } catch (e) {
+      console.error("❌ 解析ALIYUN环境变量失败!将回退到默认配置KIMI", e);
+      AI_CONFIG.apiUrl = null;
+    }
   }
-
+  
   if (!AI_CONFIG.apiUrl) {
       console.log('...回退到使用默认的KIMI 配置');
       const kimiConfig = JSON.parse(process.env.KIMI);
       AI_CONFIG.apiUrl = kimiConfig.apiUrl;
       AI_CONFIG.apiKey = kimiConfig.apikey;
-      AI_CONFIG.model = 'moonshot-v1-8k';
+      AI_CONFIG.model = 'moonshot-v1-32k';
   }
-  
-  aiModelName = AI_CONFIG.model;
   
   if (!AI_CONFIG.apiUrl || !AI_CONFIG.apiKey) {
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
