@@ -139,7 +139,7 @@ ${subtitles.join('\n')}
   const aliyunKey = process.env.ALIYUN_API_KEY;
   if (aliyunKey) {
     console.log('检测到 ALIYUN，优先使用...');
-    const aliyunModel = ["qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-plus-2026-04-02","qwen3.6-plus"];
+    const aliyunModel = ["qwen3.5-plus-2026-04-20", "qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-plus-2026-04-02","qwen3.6-plus"];
     try {
       AI_CONFIG.apiUrl = process.env.ALIYUN_API_URL;
       AI_CONFIG.apiKey = aliyunKey;
