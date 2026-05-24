@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BiliCleaner
 // @namespace    https://greasyfork.org/scripts/511437/
-// @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页；v2.6.3变更：精简代码，增加评论区ip属地显示
-// @version      2.7.0
+// @description  隐藏B站动态瀑布流中的广告、评论区广告、充电内容以及美化首页；v2.7.0 变更：精简代码，增加评论区ip属地显示
+// @version      2.7.1
 // @author       chemhunter
 // @match        *://t.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -786,7 +786,7 @@
         }
         container.appendChild(content);
         const closeBtn = document.createElement('button');
-        closeBtn.textContent = "保存并生效";
+        closeBtn.textContent = "确认";
         closeBtn.style.cssText = "display: block; width: 100%; padding: 10px; background: #00a1d6; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 15px;";
         const closeAction = () => {
             saveSettings();
@@ -848,6 +848,47 @@
     const originalFetch = window.fetch;
     console.log('[BiliCleaner] 🚀 网络拦截器已加载');
 
+    // 初始化全局统计对象
+    if (!window.__biliCleanerCommentIpStats) {
+        window.__biliCleanerCommentIpStats = {
+            _commentData: {},        // 属地 -> 评论条数
+            _userData: {},           // 属地 -> 独立用户数
+            _processedComments: new Set(),  // 已统计的评论ID（防重复）
+            _userLocationMap: new Map(),    // 用户ID -> 属地（用于用户去重）
+
+            increment(location, commentId, userId) {
+                if (!location) return;
+
+                // 按评论去重
+                if (commentId && this._processedComments.has(commentId)) return;
+                if (commentId) this._processedComments.add(commentId);
+                this._commentData[location] = (this._commentData[location] || 0) + 1;
+
+                // 按用户去重（每个用户只统计一次）
+                if (userId) {
+                    if (!this._userLocationMap.has(userId)) {
+                        this._userLocationMap.set(userId, location);
+                        this._userData[location] = (this._userData[location] || 0) + 1;
+                    }
+                }
+            },
+
+            getStats() {
+                return {
+                    commentCounts: { ...this._commentData },
+                    userCounts: { ...this._userData }
+                };
+            },
+
+            reset() {
+                this._commentData = {};
+                this._userData = {};
+                this._processedComments.clear();
+                this._userLocationMap.clear();
+            }
+        };
+    }
+
     const targetReplyUrl = '/x/v2/reply/wbi/main';
     const targetSubReplyUrl = '/x/v2/reply/reply';
     const targetDynUrl = '/x/polymer/web-dynamic/v1/feed/all';
@@ -869,7 +910,7 @@
             runtimeSettings.dynamic = runtimeSettings.dynamic || { enable: true, sub: {} };
             runtimeSettings.dynamic.sub = runtimeSettings.dynamic.sub || {};
             runtimeSettings.comment = runtimeSettings.comment || { enable: true, sub: {} };
-            runtimeSettings.comment.sub = runtimeSettings.comment.sub || {};
+            runtimeSettings.comment.sub = runtimeSettings.comment.sub || { adBlock: { enable: true }, ipShow: { enable: true } };
         } else {
             runtimeSettings = {
                 dynamic: { enable: true, sub: { goods: { enable: true }, charge: { enable: true }, reverse: { enable: true } } },
@@ -1033,7 +1074,7 @@
         return json;
     }
 
-    // 递归处理评论数据，注入 IP 属地
+    // 递归处理评论数据，注入 IP 属地并统计
     function processReplyIp(data, isSubCommentAPI = false) {
         if (!data?.data) return data;
         let commentsToProcess = [];
@@ -1042,13 +1083,30 @@
         } else {
             commentsToProcess = [].concat(data.data.top_replies || [], data.data.replies || []);
         }
+
+        const statsObj = window.__biliCleanerCommentIpStats;
+        function processSingleComment(comment, isSub) {
+            if (!comment) return;
+            const locationRaw = comment.reply_control?.location;
+            let ipLocation = null;
+            if (locationRaw && typeof locationRaw === 'string') {
+                ipLocation = locationRaw.replace(/IP属地：/ig, "").trim();
+            }
+            if (ipLocation && statsObj && comment.rpid) {
+                statsObj.increment(ipLocation, comment.rpid, comment.mid);
+            }
+            // 注入属地到用户名
+            injectIpToComment(comment, isSub);
+        }
+
         for (let i = 0; i < commentsToProcess.length; i++) {
             const comment = commentsToProcess[i];
             const isSub = isSubCommentAPI || (comment.root > 0);
-            injectIpToComment(comment, isSub);
+            processSingleComment(comment, isSub);
+            // 处理嵌套回复（仅主评论API）
             if (!isSubCommentAPI && comment.replies && comment.replies.length > 0) {
                 for (let j = 0; j < comment.replies.length; j++) {
-                    injectIpToComment(comment.replies[j], true);
+                    processSingleComment(comment.replies[j], true);
                 }
             }
         }
@@ -1098,6 +1156,7 @@
 
         if (isMainListApi || isReplyApi) refreshRuntimeConfig();
 
+        // 处理发送评论时的 message 清理
         if (isReplyAdd && args[1] && args[1].method === 'POST') {
             try {
                 let bodyData = args[1].body;
@@ -1140,7 +1199,10 @@
                     json = processReplyIp(json, url.includes(targetSubReplyUrl));
                 }
                 return new Response(JSON.stringify(json), { status: response.status, statusText: response.statusText, headers: response.headers });
-            } catch(e) { return response; }
+            } catch(e) {
+                console.error('[BiliCleaner] 处理评论响应失败，返回原始响应', e);
+                return response;
+            }
         }
 
         return response;
