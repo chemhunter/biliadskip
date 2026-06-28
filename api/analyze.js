@@ -171,7 +171,7 @@ ${subtitles.join('\n')}
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
 
-  const isThinkingModel = AI_CONFIG.model.includes('qwen3.7-max')
+  const isThinkingModel = AI_CONFIG.model.includes('qwen3.7-max');
   const reqBody = {
     model: AI_CONFIG.model,
     messages: [
