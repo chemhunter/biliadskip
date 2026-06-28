@@ -297,7 +297,7 @@
     // 上传共享数据到云端数据库 Supabase（带超时+重试）
     async function uploadAdTimeDataToCloud(bv, timestamp_range, source, NoAD = null) {
         const MAX_RETRIES = 2; // 额外重试次数
-        const TIMEOUT_MS = 5000; // 超时时间（毫秒）
+        const TIMEOUT_MS = 10000; // 超时时间（毫秒）
         let lastError = null;
 
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -335,12 +335,10 @@
             } catch (err) {
                 lastError = err;
                 const isTimeout = err.name === 'AbortError';
-                const errorMsg = isTimeout ? `请求超时 (${TIMEOUT_MS}ms)` : err.message;
+                const errorMsg = isTimeout ? `请求超时 (${TIMEOUT_MS/1000}s)` : err.message;
 
                 if (attempt < MAX_RETRIES) {
-                    console.warn(`⏳ 上传失败 (${errorMsg})，${MAX_RETRIES - attempt} 次重试剩余，稍后重试...`);
-                    // 等待 3000ms 后重试，避免频繁请求
-                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    console.warn(`⏳ 上传失败 (${errorMsg})，${MAX_RETRIES - attempt} 次重试剩余，重试...`);
                 } else {
                     console.error(`❌ 调用上传接口失败（已重试 ${MAX_RETRIES} 次）:`, errorMsg);
                 }
@@ -2103,21 +2101,21 @@ ${subtitles.join('\n')}
 
         // --- 2. 定义所有数据源和配置 ---
         const aiOptions = [
-            {value: 'aliyun', text: '阿里云（平台）', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+            {value: 'aliyun', text: '阿里云（平台）- 建议', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
              model: [
-                 //此处列出的是阿里云百炼平台上新出的模型，限时3个月免费，每个模型100万token额度，一直试用新模型，足够用了
-                 "glm-5.2","qwen3.5-ocr","kimi-k2.7-code","qwen3.7-max-2026-06-08","qwen3.7-plus","qwen3.7-plus-2026-05-26", // --2026-09
+                 //此处列出的是阿里云百炼平台上新出的模型，限时3个月免费，每个模型100万token额度，一直白嫖试用最新模型，足够用了
+                 "glm-5.2","qwen3.7-max-2026-06-08","qwen3.7-plus","qwen3.7-plus-2026-05-26",                                    // --体验有效期至 2026-09
                  "qwen3.7-max-2026-05-17","qwen3.7-max-preview","qwen3.7-max","qwen3.7-max-2026-05-20",            // --2026-08
-                 "glm-5.1","qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-35b-a3b","qwen3.6-max-preview",         // --2026-07
+                 "glm-5.1","qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-35b-a3b","qwen3.6-max-preview",        // --2026-07
                  "kimi-k2.6", "tongyi-xiaomi-analysis-flash","qwen-flash-character","tongyi-xiaomi-analysis-pro",
                  "qwen3.5-plus-2026-04-20", "qwen3.6-27b","deepseek-v4-pro","deepseek-v4-flash",
              ]
             },
-            { value: 'deepseek', text: '深度求索 DeepSeek', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
-            {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: ['kimi-k2-0905-preview','kimi-k2-0711-preview', 'kimi-k2.5', 'moonshot-v1-32k', 'moonshot-v1-8k' ] },
-            {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: ['Qwen3-30B-A3B-Instruct-2507','DeepSeek-R1-Distill-Qwen-32B'] },
-            {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: ['ernie-4.5-turbo-latest', 'qwen3-30b-a3b-instruct-2507','qwen3-14b'] },
-            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: ['GLM-5.1','GLM-5','GLM-4.5-Air','GLM-4.5'] },
+            { value: 'deepseek', text: '深度求索 DeepSeek - 建议', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+            {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: ['kimi-k2.6', 'kimi-k2.5', 'moonshot-v1-32k', 'moonshot-v1-8k' ] },
+            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: ['glm-5.2', 'glm-5.1', ' glm-5', 'glm-4.7', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'] },
+            {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: ['deepseek-ai/DeepSeek-V4-Flash','MiniMaxAI/MiniMax-M2.5'] },
+            // {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: ['ernie-4.5-turbo-latest', 'qwen3-30b-a3b-instruct-2507','qwen3-14b'] },
             {value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-5.1-nano', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4o-mini', 'gpt-4o' ]},
             { value: 'custom1', text: '自定义AI-1', apiUrl: '', model: '' },
             { value: 'custom2', text: '自定义AI-2', apiUrl: '', model: '' }
