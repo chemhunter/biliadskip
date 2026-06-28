@@ -171,6 +171,7 @@ ${subtitles.join('\n')}
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
 
+  const isThinkingModel = AI_CONFIG.model.includes('qwen3.7-max')
   const reqBody = {
     model: AI_CONFIG.model,
     messages: [
@@ -178,7 +179,12 @@ ${subtitles.join('\n')}
         { role: 'user', content: user_prompt },
     ],
     temperature: 0.2,
-    enable_thinking: false,
+    enable_thinking: isThinkingModel,
+    thinking: { "type": isThinkingModel ? "enabled" : "disabled" },
+    extra_body: {
+      "thinking": {"type": isThinkingModel ? "enabled": "disabled"},
+      "thinking_budget": 500
+    },
     max_tokens: 200,
   };
 
