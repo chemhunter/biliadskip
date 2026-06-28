@@ -27,12 +27,12 @@ function decodeBV(bv) {
 async function preflightCheckWithSupabase(bvNumber) {
     // 从 Vercel 的环境变量中获取 URL 和 anon key
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-    const functionUrl = 'https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/bv_calls'; // 这是您新创建的 Supabase 函数
+    const functionUrl = process.env.SUPABASE_bv_calls_endpoint;
     const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
             'apikey': supabaseAnonKey,
-            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${supabaseAnonKey}`,
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({ bv: bvNumber }),
@@ -46,34 +46,6 @@ async function preflightCheckWithSupabase(bvNumber) {
 
     return await response.json(); // 返回 { allowed, reason }
 }
-
-/* 移除该逻辑
-async function uploadAdTimestamp({ bv, timestamp_range, source, user_id, up_id }) {
-    const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
-    const headers = {'Content-Type': 'application/json'};
-    const body = {bv, timestamp_range, source, user_id, up_id};
-    try {
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body)
-        });
-
-        if (!resp.ok) {
-            const errorText = await resp.text();
-            console.error(`❌ 调用Supabase Edge Function失败! 状态码: ${resp.status}, 响应: ${errorText}`);
-            return false;
-        }
-        const resultJson = await resp.json();
-        console.log('✅ 成功通过Edge Function上传时间戳:', resultJson);
-        return true;
-
-    } catch (err) {
-        console.error("❌ 调用Supabase Edge Function时发生网络异常:", err);
-        return false;
-    }
-}
-*/
 
 // ----------- 调用AI -----------
 async function fetchAITimestamps(subtitlesText, commentText ='') {
@@ -153,7 +125,7 @@ ${subtitlesText}
       AI_CONFIG.apiKey = aliyunKey;
       AI_CONFIG.model = selectedModel;
       AI_CONFIG.providerName = `Aliyun (${selectedModel})`;
-      console.log(`✅ 已随机选择阿里云模型: ${selectedModel}`);
+      console.log(`✅ 随机选择模型: ${selectedModel}`);
     } catch (e) {
       console.error("❌ 解析ALIYUN环境变量失败!将回退到默认配置KIMI", e);
     }
