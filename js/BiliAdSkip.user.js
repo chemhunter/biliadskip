@@ -302,7 +302,7 @@
 
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
+                const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskipShare";
                 const upInfo = await getUpInfo();
                 const dataBody = {
                     bv,
