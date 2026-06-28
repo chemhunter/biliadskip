@@ -2,7 +2,7 @@
 // @name             BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version       2.34-lite
+// @version       2.36-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -29,14 +29,22 @@
     'use strict';
 
     // 调试开关
-    const SHOW_DEBUG_LOG = false; // 输出debug日志
-    const SHOW_DEBUG_TIMEGAP = false; // 输出两条debug日志之间的间隔时间
-    const FORCE_GIT_CONFIG = false; // 强制每个页面重新从git镜像获取最新关键词
-    const FORCE_AI_ACTIVE = true; // 强制启用AI分析
-    const DOWNLOAD_SUBTITLE_FILE = false; // 下载视频字幕文件到本地
-    const SHORT_VIDEO_DURATION = 150; // 短视频时长评判依据，单位/s
-    const backupIntervals = 3; // 备份脚本数据到本地的周期，默认3，最小1，单位/天
-    const ANALYZE_DNAMAKU = null; // 统计该文本弹幕的数量
+    const CONFIG_DEFAULTS = {
+        SHOW_DEBUG_LOG: false,               // 调试用，输出debug日志
+        SHOW_DEBUG_TIMEGAP: false,       // 调试用，输出两条debug日志之间的间隔时间
+        FORCE_GIT_CONFIG: false,               // 调试用，强制每个页面重新从git镜像获取最新关键词
+        DOWNLOAD_SUBTITLE_FILE: false,  // 调试用，下载视频字幕文件到本地
+        FORCE_AI_ACTIVE: true,                   // 强制启用AI分析
+
+        SHORT_VIDEO_DURATION: 150,     // 短视频时长评判依据，单位/s
+        TIME_GROUP_THRESHOLD: 10,      // 弹幕时间戳合组误差范围，单位/s
+        MIN_JUMP_INTERVAL: 5,                // 跳转冷静期，防止频繁跳转，单位/s
+        backupIntervals: 3,                          // 备份脚本数据到本地的周期，默认3，最小1，单位/天
+        ANALYZE_DNAMAKU: null             // 统计特定文本弹幕的数量，一般用不到
+    };
+
+    // 从 GM 存储中加载配置，并与默认配置合并
+    let scriptConfig = Object.assign({}, CONFIG_DEFAULTS, GM_getValue('scriptConfig', {}));
 
     // 公共AI平台 supabase || vercel
     const cloudPlatformService = 'supabase';
@@ -66,12 +74,16 @@
         upName: '',
         officialOrg: null,
         noAd: false,
+        danmakuCollapsed: false,
         danmakuTimestampStore: {},
         isAIAnalysisInProgress: false,
         commentAnalysisResult: null,
+        danmakuExactCount: 0,
+        danmakuContainsCount: 0,
     };
 
     const state = { ...defaultState };
+    const boldGreen = 'color: #3498db; font-weight: bold;', boldOrange = 'color: #e67e22; font-weight: bold;';
 
     const defaultConfig = {
         keywordStr: `[淘某]宝|京东|天猫|美团|拼多|并夕|外卖|密令|转转|补贴|折扣|福利|[下晒]单|退款|免费|大[促额漏水]|[心快速]冲|运(费?)险|[领惠叠]券|[低底特好性差降保]价`,
@@ -86,10 +98,7 @@
     }
 
     // --- 新增：全局数据缓存 ---
-    const scriptCache = {
-        mainAdDbKeys: [],
-        noAdDbKeys: []
-    };
+    const scriptCache = { mainAdDbKeys: [], noAdDbKeys: [] };
 
     //protobuf库
     const { Root } = window.protobuf;
@@ -121,9 +130,9 @@
     }
 
     function debuglog(...args) {
-        if (SHOW_DEBUG_LOG) {
+        if (scriptConfig.SHOW_DEBUG_LOG) {
             let logTimeGap = '';
-            if (SHOW_DEBUG_TIMEGAP) {
+            if (scriptConfig.SHOW_DEBUG_TIMEGAP) {
                 const now = Date.now();
                 const gap = now - logTime;
                 logTimeGap = (gap <= 5000 && gap >= 50) ? `[${gap}]` : '';
@@ -148,10 +157,86 @@
         log('状态已重置 (保留进程标志)');
     }
 
+    /**
+     * 通用按钮创建函数
+     * @param {string} text 按钮文本
+     * @param {function} onClick 点击回调
+     * @param {string} extraStyles 额外样式
+     * @returns {HTMLButtonElement}
+     */
+    function createButton(text, onClick, extraStyles = '') {
+        const button = document.createElement('button');
+        button.textContent = text;
+        button.style.cssText = `padding: 3px 3px; border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px; cursor: pointer; font-size: 14px; ${extraStyles}`;
+        if (onClick) button.onclick = onClick;
+        return button;
+    }
 
-    // 查询云端，通过调用Edge Function
+    /**
+     * 应用弹窗容器通用样式
+     * @param {HTMLElement} element 容器元素
+     * @param {object} options 样式配置
+     */
+    function applyPopupStyle(element, options = {}) {
+        const defaultStyle = {
+            position: 'fixed',
+            top: '30%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '500px',
+            padding: '20px',
+            background: '#fff',
+            border: '1px solid #ccc',
+            borderRadius: '10px',
+            zIndex: '10000',
+            fontSize: '16px',
+            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+        };
+        const style = Object.assign({}, defaultStyle, options);
+        let cssText = '';
+        for (const [key, value] of Object.entries(style)) {
+            const cssKey = key.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`);
+            cssText += `${cssKey}: ${value}; `;
+        }
+        element.style.cssText = cssText;
+    }
+
+    /**
+     * 将弹幕时间戳添加到存储并进行聚类处理
+     * @param {number} ts 弹幕提到的时间戳（秒）
+     * @param {number} savedAt 弹幕出现时的视频进度（秒）
+     * @param {boolean} isAdTs 是否带有广告关键词标识
+     */
+    function addDanmakuToStore(ts, savedAt, isAdTs) {
+        let clusterKey = null;
+        for (const existingTsKey in state.danmakuTimestampStore) {
+            const existingTs = Number(existingTsKey);
+            if (Math.abs(ts - existingTs) <= CONFIG_DEFAULTS.TIME_GROUP_THRESHOLD) {
+                clusterKey = existingTs;
+                break;
+            }
+        }
+        if (clusterKey === null) {
+            clusterKey = ts;
+            state.danmakuTimestampStore[clusterKey] = [];
+        }
+        const occurrence = {
+            savedAt: savedAt,
+            count: isAdTs ? 2 : 1
+        };
+        state.danmakuTimestampStore[clusterKey].push(occurrence);
+        return clusterKey;
+    }
+
+
+    // 查询云端，通过调用Edge Function（带超时控制）
     async function fetchAdTimeDataFromCloud(bv) {
         log('⌛查询云端时间戳...');
+        const timeoutMs = 3000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
         try {
             const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskipQuery";
             const response = await fetch(url, {
@@ -160,8 +245,11 @@
                     'Authorization': `Bearer ${supabaseAnonKey.join('.')}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ bv})
+                body: JSON.stringify({ bv }),
+                signal: controller.signal
             });
+
+            clearTimeout(timeoutId); // 请求完成，清除超时定时器
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -175,51 +263,91 @@
             // log(`⏬ ${bv} 云端返回数据`, data);
             return data;
         } catch (error) {
-            console.error(`❌ 调用接口异常:`, error.message);
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                log(`⏰ 请求超时 (${timeoutMs}ms)`);
+            } else {
+                console.error(`❌ 调用查询接口异常:`, error.message);
+            }
             return null;
         }
     }
 
-
-    // 上传共享数据到云端数据库 Supabase
-    async function uploadAdTimeDataToCloud(bv, timestamp_range, source, NoAD = null) {
+    async function fetchWithTimeout(url, options, timeoutMs = 500) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
-            const upInfo = await getUpInfo();
-            const dataBody = {
-                bv,
-                timestamp_range: NoAD ? null : timestamp_range,
-                source,
-                user_id: getOrCreateUserId(),
-                up_id: state.upName || upInfo?.name || 'unknown',
-                NoAD
-            }
-
-            const Resp = await fetch(url, {
-                method: "POST",
-                headers: {
-                    'Authorization': `Bearer ${supabaseAnonKey.join('.')}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(dataBody)
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
             });
-
-            if (!Resp.ok) {
-                const errorText = await Resp.text();
-                console.error("❎调用接口失败：", Resp.status, Resp.statusText, errorText);
-                return { success: false, error: errorText };
-            }
-
-            log(`🆗已共享: ${timestamp_range || NoAD && 'noAd' }`);
-            const biliadskipJson = await Resp.json();
-            return { success: true, biliadskip_result: biliadskipJson };
-
-        } catch (err) {
-            console.error("❌调用接口异常：", err);
-            return { success: false, error: err.message || err };
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
         }
     }
 
+    // 上传共享数据到云端数据库 Supabase（带超时+重试）
+    async function uploadAdTimeDataToCloud(bv, timestamp_range, source, NoAD = null) {
+        const MAX_RETRIES = 2; // 额外重试次数
+        const TIMEOUT_MS = 5000; // 超时时间（毫秒）
+        let lastError = null;
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskip";
+                const upInfo = await getUpInfo();
+                const dataBody = {
+                    bv,
+                    timestamp_range: NoAD ? null : timestamp_range,
+                    source,
+                    user_id: getOrCreateUserId(),
+                    up_id: state.upName || upInfo?.name || 'unknown',
+                    NoAD
+                };
+
+                // 使用带超时的 fetch
+                const Resp = await fetchWithTimeout(url, {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Bearer ${supabaseAnonKey.join('.')}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(dataBody)
+                }, TIMEOUT_MS);
+
+                if (!Resp.ok) {
+                    const errorText = await Resp.text();
+                    throw new Error(`HTTP ${Resp.status}: ${errorText}`);
+                }
+
+                log(`🆗已共享: ${timestamp_range || (NoAD && 'noAd')}`);
+                const biliadskipJson = await Resp.json();
+                return { success: true, biliadskip_result: biliadskipJson };
+
+            } catch (err) {
+                lastError = err;
+                const isTimeout = err.name === 'AbortError';
+                const errorMsg = isTimeout ? `请求超时 (${TIMEOUT_MS}ms)` : err.message;
+
+                if (attempt < MAX_RETRIES) {
+                    console.warn(`⏳ 上传失败 (${errorMsg})，${MAX_RETRIES - attempt} 次重试剩余，稍后重试...`);
+                    // 等待 3000ms 后重试，避免频繁请求
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                    console.error(`❌ 调用上传接口失败（已重试 ${MAX_RETRIES} 次）:`, errorMsg);
+                }
+            }
+        }
+
+        // 所有重试均失败，返回失败结果
+        return {
+            success: false,
+            error: lastError?.message || lastError || '未知错误'
+        };
+    }
 
     // 绑定视频timeupdate事件的回调函数
     function handleTimeUpdate() {
@@ -234,23 +362,26 @@
             const timeSinceLastJump = now - state.lastJumpTime;
 
             // 规则一：跳转抑制
-            if (timeSinceLastJump < MIN_JUMP_INTERVAL * 1000) {
+            if (timeSinceLastJump < CONFIG_DEFAULTS.MIN_JUMP_INTERVAL * 1000) {
                 return;
             }
 
             // 规则二：安全区检查
-            const clampedEndZone = 15; //Math.max(15, Math.min(duration / 10, 90));
-            const isSafeToJumpFrom = currentTime > 15 && currentTime < duration - clampedEndZone;
+            const clampedEndZone = 15;
+            // 如果 duration 还没加载出来，先跳过检查
+            const isSafeToJumpFrom = currentTime > 15 && (duration ? currentTime < duration - clampedEndZone : true);
 
             // 规则三：时间段检查
             const start = timeToSeconds(state.adTime.start);
             const end = timeToSeconds(state.adTime.end);
 
+            if (start === undefined || end === undefined) return;
+
             const isInAdSegment = currentTime >= start && currentTime <= end;
 
             // 【最终决策】
             if (isInAdSegment && isSafeToJumpFrom) {
-                log(`timeUpdate: 执行广告跳转`);
+                log(`timeUpdate: 检测到广告区段，执行跳转...`);
                 JumpAndShowNotice(state.video, start, end, now);
             }
         }
@@ -409,8 +540,8 @@
         const video = await initPageObserver();
         if (!video) return;
         state.video = video;
-        if (video.duration < SHORT_VIDEO_DURATION ) {
-            debuglog(`视频长度不足 - ${video.duration}s`);
+        if (video.duration < scriptConfig.SHORT_VIDEO_DURATION ) {
+            debuglog(`短视频跳过 - ${video.duration}s`);
             markVideoAsNoAd(bvNumber, {reason:'isShortVideo'});
             return;
         }
@@ -447,6 +578,9 @@
                 log(`🩷充电专属视频，跳过广告检测`);
                 state.noAd = true;
                 danmakuManager.stop();
+                if (scriptConfig.DOWNLOAD_SUBTITLE_FILE) {
+                    triggerSubtitleDownload(bvNumber);
+                }
                 return;
             }
         }
@@ -454,7 +588,7 @@
     }
 
     /** (重构版) 常规模式下的总指挥。
-              * 负责：状态重置 -> 获取信息 -> 做出决策 -> 启动监控。*/
+    * 负责：状态重置 -> 获取信息 -> 做出决策 -> 启动监控。*/
     async function handlePageChanges(observer) {
         if (state.isHandling) {
             if(observer) observer.disconnect();
@@ -481,15 +615,15 @@
                 log(`⚠️ BV 变更... ${state.currentBV} -> ${bvNumber}`);
                 resetState();
             }
+
             state.currentBV = bvNumber;
-            log(` %c${bvNumber}`,'color: #e67e22; font-weight: bold;');
+            log(` %c${bvNumber}`, boldOrange);
             const canProceed = await videoNeedAdAnalyze(bvNumber);
             if (canProceed) {
                 debuglog('启动广告相关监控...');
                 await bindVideoEvents(state.video);
                 await processBV(bvNumber);
             }
-
         } catch (error) {
             console.error('❌ 处理页面变化时发生错误:', error);
         } finally {
@@ -500,7 +634,18 @@
 
     /*** (新增) 将所有核心事件绑定到 video 元素上。*/
     async function bindVideoEvents(video) {
-        log(`视频状态：${state.video?.paused ? '暂停' : '播放'}`);
+        if (!video) return;
+        if (video._biliAdSkipBound) {
+            debuglog('⚠️ 视频元素已绑定过事件，跳过重复绑定');
+            // 即使绑定过，如果有了新的广告时间，也需要确保 timeupdate 绑定了最新的 handleTimeUpdate
+            if (state.adTime) {
+                video.removeEventListener('timeupdate', handleTimeUpdate);
+                video.addEventListener('timeupdate', handleTimeUpdate);
+            }
+            return;
+        }
+
+        log(`视频状态：${video.paused ? '暂停' : '播放'}`);
 
         const handlePlay = async () => {
             const currentBV = await getBVNumber();
@@ -509,7 +654,7 @@
                 return;
             }
             log('▶️ 视频播放中，恢复监控');
-            const isTaskConcluded = state.adTime || state.noAd || whiteList.includes(state.upName);
+            const isTaskConcluded = state.adTime || state.noAd || (state.upName && whiteList.includes(state.upName));
             if (!isTaskConcluded) {
                 debuglog('👓重建弹幕观察器...');
                 danmakuManager.start();
@@ -523,16 +668,18 @@
             danmakuManager.stop();
         };
 
-        video.removeEventListener('play', await handlePlay);
-        video.removeEventListener('pause', handlePause);
-
-        video.addEventListener('play', await handlePlay);
+        video.addEventListener('play', handlePlay);
         video.addEventListener('pause', handlePause);
-
-        video.removeEventListener('ended', videoEnded);
         video.addEventListener('ended', videoEnded);
 
-        debuglog('✅ 视频元素绑定事件');
+        // 如果已经有广告时间戳，确保绑定 timeupdate
+        if (state.adTime) {
+            video.removeEventListener('timeupdate', handleTimeUpdate);
+            video.addEventListener('timeupdate', handleTimeUpdate);
+            debuglog('✅ 已重新绑定 timeupdate 监听器');
+        }
+
+        video._biliAdSkipBound = true;
     }
 
 
@@ -548,13 +695,13 @@
                 if (bestRecord) {
                     //云端返回无广告
                     if (bestRecord.NoAD) {
-                        log(` 🟢%c noAd`, 'color: #3498db; font-weight: bold;');
+                        log(` 🟢%c noAd`, boldGreen);
                         state.noAd = true;
                         await markVideoAsNoAd(bvNumber, { reason: "cloud_record" });
                         return;
                     } else if (bestRecord.timestamp_range) {
                         //云端返回有效时间戳
-                        log(` 🟢 云端: %c${bestRecord.timestamp_range}, %c${bestRecord.source}`, 'color: #3498db; font-weight: bold;', 'color: #e67e22; font-weight: bold;');
+                        log(` 🟢 %c${bestRecord.timestamp_range}, %c${bestRecord.source}`, boldGreen, boldOrange);
                         const dataTimestamp = extractTimestampFromString(bestRecord.timestamp_range);
                         if (dataTimestamp) {
                             state.adTime = dataTimestamp;
@@ -577,7 +724,7 @@
                     state.noAd = true;
                     return;
                 }
-                log(`❓查询缓存 --> '${result.adTime}`);
+                log(`❓查询缓存 --> `, JSON.stringify(result.adTime));
                 state.adTime = result.adTime;
                 monitorTimestamp(bvNumber, result.adTime, result.source, {uploadCloud: false, saveTimestamp: false});
                 return;
@@ -600,27 +747,32 @@
         window.scrollBy({ top: distance, left: 0, behavior: 'smooth' });
     }
 
-    /** 等待通过网络拦截器获取AI字幕。*/
-    async function fetchBilibiliSubtitleAPI(timeout = 3000) {
-        async function showAiSubtitle() {
+    /** 尝试触发AI字幕 */
+    async function showAiSubtitle() {
+        try {
+            // 确保字幕控制按钮存在
             const subtitleCtrlBtn = document.querySelector('.bpx-player-ctrl-btn.bpx-player-ctrl-subtitle');
-            if (subtitleCtrlBtn) {
-                const subtitleOption = document.querySelector('.bpx-player-ctrl-subtitle-major .bpx-player-ctrl-subtitle-language-item[data-lan="ai-zh"]');
-                if (subtitleOption) {
-                    subtitleOption.click();
-                    await randomSleep(2000);
-                    const subtitleClose = document.querySelector('.bpx-player-ctrl-subtitle-close-switch[data-action="close"]');
-                    if (subtitleClose) {
-                        subtitleClose.click();
-                    }
-                    return true;
-                }
-            } else {
-                debuglog('❌ 无AI字幕')
+            if (!subtitleCtrlBtn) {
+                console.debug('❌ 视频无字幕控件');
+                return false;
             }
+
+            const aiOption = document.querySelector('.bpx-player-ctrl-subtitle-major .bpx-player-ctrl-subtitle-language-item[data-lan="ai-zh"]');
+            if (aiOption) {
+                aiOption.click();
+                return true;
+            } else {
+                debuglog('❌ 未找到AI中文字幕选项');
+                return false;
+            }
+        } catch (err) {
+            console.error('触发AI字幕失败:', err);
             return false;
         }
+    }
 
+    /** 等待通过网络拦截器获取AI字幕 */
+    async function fetchBilibiliSubtitleAPI(timeout = 5000) {
         const subtitleDataPromise = new Promise((resolve) => {
             subtitlePromiseResolver = (subtitles) => {
                 subtitlePromiseResolver = null;
@@ -638,15 +790,21 @@
             }, timeout);
         });
 
-        showAiSubtitle().then(triggered => {
-            if (!triggered) {
-                if (subtitlePromiseResolver) {
-                    subtitlePromiseResolver([]);
-                }
-            }
-        });
+        // 触发显示AI字幕
+        const triggered = await showAiSubtitle();
+        if (!triggered && subtitlePromiseResolver) {
+            subtitlePromiseResolver([]);
+        }
 
         const subtitles = await Promise.race([subtitleDataPromise, timeoutPromise]);
+
+        // 延迟3秒后自动关闭字幕
+        setTimeout(() => {
+            const subtitleClose = document.querySelector('.bpx-player-ctrl-subtitle-close-switch[data-action="close"]');
+            if (subtitleClose) {
+                subtitleClose.click();
+            }
+        }, 2000);
 
         return subtitles;
     }
@@ -762,7 +920,7 @@
         const ext = Math.max(10, 120 - (end - start) / 2);
         const startExt = Math.max(0, start - ext);
         const endExt = end + ext;
-        debuglog(`❓扩展广告区域 ${formatTime(startExt)}-${formatTime(endExt)}`);
+        debuglog(`❓广告区域 ${formatTime(start)}-${formatTime(end)}，扩展 ${formatTime(startExt)}-${formatTime(endExt)}`);
 
         // 5. 提取疑似广告部分字幕
         const filteredSubtitles = subtitleObjects
@@ -782,9 +940,46 @@
     }
 
 
+    /** (新增) 将字幕数组解析为对象数组 */
+    function parseSubtitlesArray(subtitlesArray) {
+        return subtitlesArray.map(s => {
+            const idx = s.indexOf(' ');
+            const head = idx > -1 ? s.slice(0, idx) : s;
+            const content = idx > -1 ? s.slice(idx + 1) : '';
+            if (head.includes('-')) {
+                const [fromStr, toStr] = head.split('-');
+                const fromSec = timeToSeconds(fromStr);
+                const toSec = timeToSeconds(toStr);
+                return { fromStr, toStr, fromSec, toSec, content };
+            } else {
+                const fromStr = head;
+                const fromSec = timeToSeconds(fromStr);
+                return { fromStr, toStr: fromStr, fromSec, toSec: fromSec, content };
+            }
+        });
+    }
+
+
+    /** (新增) 独立触发字幕下载流程 */
+    async function triggerSubtitleDownload(bvNumber) {
+        if (!scriptConfig.DOWNLOAD_SUBTITLE_FILE) return;
+
+        log('📥 启动独立字幕下载流程...');
+        const subtitlesArray = await fetchBilibiliSubtitleAPI();
+        if (subtitlesArray && subtitlesArray.length > 0) {
+            const subtitlesObjects = parseSubtitlesArray(subtitlesArray);
+            await trySaveSubtitles(subtitlesObjects);
+            return true;
+        } else {
+            log('❌ 未获取到有效字幕，下载中止');
+            return false;
+        }
+    }
+
+
     /** 保存字幕到本地（仅限未下载）*/
     async function trySaveSubtitles(subtitleObjects) {
-        if (!DOWNLOAD_SUBTITLE_FILE) return;
+        if (!scriptConfig.DOWNLOAD_SUBTITLE_FILE) return;
         const subtitleArray = subtitleObjects.map(obj => {
             if (obj.fromStr && obj.toStr) {
                 return `${obj.fromStr}-${obj.toStr} ${obj.content}`;
@@ -804,7 +999,7 @@
             const titleEl = document.querySelector('.video-info-title h1.video-title');
             const title = titleEl ? titleEl.textContent.trim().replace(/[\\/:*?"<>|]/g, '') : '无标题';
 
-            const fileName = `UP-(${getUpInfo().name})-${bvNumber}-${title}.json`;
+            const fileName = `UP-(${state.upName})-${bvNumber}-${title}.json`;
             const blob = new Blob([JSON.stringify(subtitleArray, null, 2)], { type: 'application/json' });
             const urlObject = URL.createObjectURL(blob);
 
@@ -945,21 +1140,7 @@
             state.commentText = aiReferenceText;
 
             // 2. 本地预处理
-            const subtitlesObjects = subtitlesArray.map(s => {
-                const idx = s.indexOf(' ');
-                const head = idx > -1 ? s.slice(0, idx) : s;
-                const content = idx > -1 ? s.slice(idx + 1) : '';
-                if (head.includes('-')) {
-                    const [fromStr, toStr] = head.split('-');
-                    const fromSec = timeToSeconds(fromStr);
-                    const toSec = timeToSeconds(toStr);
-                    return { fromStr, toStr, fromSec, toSec, content };
-                } else {
-                    const fromStr = head;
-                    const fromSec = timeToSeconds(fromStr);
-                    return { fromStr, toStr: fromStr, fromSec, toSec: fromSec, content };
-                }
-            });
+            const subtitlesObjects = parseSubtitlesArray(subtitlesArray);
             const { subtitlesNoAd, filteredSubtitles } = subtitlesFiltering(subtitlesObjects, commentAnalysis);
             trySaveSubtitles(subtitlesObjects);
 
@@ -1007,7 +1188,7 @@
             if (commentDataWBI && commentDataWBI.data && commentDataWBI.data.top_replies) {
                 const apiResult = analyzeCommentJson(commentDataWBI.data.top_replies);
                 if (apiResult) {
-                    log('✅ [评论分析器] WBI API 分析成功。');
+                    log('✅ [评论分析器] WBI API 分析成功');
                     return apiResult;
                 }
             }
@@ -1015,7 +1196,7 @@
 
         } else {
             // --- 策略B：v1 API 优先，带多种回退 (为UI模式设计) ---
-            log('  -> 策略: v1 API 优先 (带回退)');
+            log('  -> 策略: v1 API 优先');
             const commentData = await fetchBilibiliComments({ aid });
             if (commentData) {
                 const apiResult = analyzeCommentJson(commentData.top_replies);
@@ -1088,14 +1269,14 @@
         const result = await getCommentAnalysis(bvNumber, { allowDomFallback: true });
 
         // 2. 决策：是否需要启动AI (仅在UI模式下)
-        if (!state.isAIAnalysisInProgress && (FORCE_AI_ACTIVE || result.hasAd)) {
+        if (!state.isAIAnalysisInProgress && (scriptConfig.FORCE_AI_ACTIVE || result.hasAd)) {
             try {
                 log('(UI模式) 等待拦截字幕...');
                 const subtitlesArray = await fetchBilibiliSubtitleAPI();
                 if (subtitlesArray && subtitlesArray.length > 0) {
                     await runAiAnalysis(bvNumber, subtitlesArray, result);
                 } else {
-                    log('(UI模式) 无字幕，AI流程中止');
+                    log('无中文字幕，流程中止');
                 }
             } finally {
                 state.isAIAnalysisInProgress = false;
@@ -1173,12 +1354,12 @@
             danmakuManager.stop();
             if (aiResultJson.noAd === true) {
                 //无广告
-                log(` ✅ AI返回: %c无广告`, 'color: #3498db; font-weight: bold;');
+                log(` ✅ AI返回: %c无广告`, boldGreen);
                 playBeepSound(700);
                 await markVideoAsNoAd(bvNumber, {upload: true, reason: aiResultJson.source || 'kimi'});
             } else {
                 //有时间戳，本地保存 + 共享上传
-                log(` 🎯 AD: %c${aiResultJson.start}-${aiResultJson.end}, ${aiResultJson.product}`, 'color: #3498db; font-weight: bold;');
+                log(` 🎯 %c${aiResultJson.start} - ${aiResultJson.end}, ${aiResultJson.product}`, boldGreen);
                 playBeepSound(1100);
                 const finalOptions = { ...options, saveTimestamp: true, uploadCloud: true };
                 monitorTimestamp(bvNumber, aiResultJson, aiResultJson.source, finalOptions);
@@ -1188,7 +1369,7 @@
 
     async function monitorTimestamp(bvNumber, dataTimestamp, source, options = {}) {
         //1. 合法性检查
-        if (!dataTimestamp || typeof dataTimestamp !== 'object' || !dataTimestamp.start || !dataTimestamp.end) {
+        if (!(dataTimestamp && typeof dataTimestamp === 'object' && dataTimestamp.start && dataTimestamp.end)) {
             console.warn("❌无效时间戳，跳过", dataTimestamp);
             return;
         }
@@ -1196,6 +1377,7 @@
         //2. 更新state状态，启动视频进度监测
         if (isTrueVideoPage()) {
             state.adTime = dataTimestamp;
+            state.video.removeEventListener('timeupdate', handleTimeUpdate);
             state.video.addEventListener('timeupdate', handleTimeUpdate);
         }
 
@@ -1214,8 +1396,8 @@
             if (!state.uploaded) {
                 state.uploaded = true;
                 const timestamp_range = `${dataTimestamp.start}-${dataTimestamp.end}`;
-                const source_update = (source === "manual" ? 'manual_cloud': source);
-                debuglog('⬆️共享', timestamp_range, source_update);
+                const source_update = (source === "manual" ? 'manual_upload': source);
+                log('⬆️共享', timestamp_range, source_update);
                 await uploadAdTimeDataToCloud(bvNumber, timestamp_range, source_update);
             }
         }
@@ -1289,33 +1471,50 @@
         }
 
         // 3. 构造请求
-        log(`模型：${selectedAI} - ${currentConfig.model}`)
+        log(`供应商：${selectedAI} ，模型：${currentConfig.model}`)
         const commentText = state.commentText;
         const system_prompt = `
-你是一个精准的广告分析引擎。
-你的唯一任务是分析用户提供的视频字幕和评论区文本，判断其中是否包含商业广告，并返回一个结构化的JSON对象。
+你是一个精准的广告分析引擎，唯一任务是判断视频字幕中是否包含商业广告，并返回一个结构化 JSON。
 
-输入说明：
-- 字幕行通常为 "mm:ss.s-mm:ss.s 内容" 的格式，其中前者是该条字幕的开始时间(from)，后者是结束时间(to)，均为 0.1s 精度；
-- 如遇仅有单个时间戳的行（例如 "mm:ss 内容"），将其视为仅有起始时间的旧版本字幕。
+你必须**只返回一个 JSON 对象**，不能有任何前缀、后缀、解释或 Markdown 标记，且必须是紧凑的单行 JSON。
 
-输出要求（必须严格返回一个 JSON 对象）：
-- 必须包含字段：
-  - "start": 广告起始时间戳（"mm:ss.s" 或 "hh:mm:ss.s"），精度至少 0.1s；
-  - "end": 广告结束时间戳（"mm:ss.s" 或 "hh:mm:ss.s"），精度至少 0.1s；
-  - "noAd": 布尔值；如果确定无广告，则为 true；
-  - "product": 字符串；广告中推广的商品名称（无法判断可为 null）。
-- 若未发现广告，返回 {"start": null, "end": null, "product": null, "noAd": true}。
+输入格式：
+- 字幕行通常为 "mm:ss.s-mm:ss.s 内容"（from-to），精度 0.1s
+- 若只有单个时间戳如 "mm:ss 内容"，视为仅有起始时间
+- 还会提供视频标题和部分评论文本供参考（辅助判断，不作为主要依据）
 
-判定规则：
-1) 返回值必须是可被 JSON.parse() 解析的合法 JSON，且不要包含任何多余文字；
-2) 时间精度至少 0.1s，且使用 "mm:ss.s" 或 "hh:mm:ss.s" 格式；
-3) 广告区段边界由字幕区段决定：
-   - "start" = 第一条广告相关字幕的开始时间(from)；
-   - "end"   = 最后一条广告相关字幕的结束时间(to)；
-4) 将引入广告的话术也视为广告开始（如：“说到...就不得不提...” 等），并覆盖至广告收尾；
-5) 返回的区段要尽可能覆盖完整广告，不要遗漏；商业广告通常不少于 30 秒；
-6) 不涉及军用装备及法律禁止公开买卖的物品。
+输出字段（缺一不可）：
+- start: 广告起始时间戳，格式 "mm:ss.s"，必须从字幕中提取
+- end:   广告结束时间戳，格式 "mm:ss.s"，必须从字幕中提取
+- noAd:  布尔值，无广告时为 true
+- product: 推广的商品名称（无法确定则为 null）
+
+若未发现广告，必须返回：
+{"start":null,"end":null,"product":null,"noAd":true}
+
+广告判定规则：
+1. 输出必须能被 JSON.parse 直接解析，不包含任何额外字符。
+2. 时间精度至少 0.1s，并一律使用 "mm:ss.s" 格式（必要可延长至 "hh:mm:ss.s"）。
+3. 广告区段由字幕内容决定：
+   - start = 第一条广告相关字幕的 from 时间
+   - end   = 最后一条广告相关字幕的 to 时间
+4. 广告的开始信号包括但不限于：
+   - “今天给大家推荐/安利/分享一款...”
+   - “说到了...就不得不提...”
+   - 赞助冠名、口播植入的引导语
+   以上情况均应视为广告已开始。
+5. 广告的结束信号包括：“回归正题”“感谢观看，我们继续”或商品信息完全消失的时刻。
+6. 不要预设广告的最小长度，口播广告可能只有十几秒，请根据实际内容判断。
+7. 不涉及军用装备及法律禁止公开买卖的物品（如发现可忽略该段字幕）。
+8. 评论中出现大量重复的产品名可增加广告嫌疑，但最终以字幕为准。
+
+示例：
+字幕：
+00:05.0-00:09.0 说到洗面奶我最近发现一款特别好用的
+00:09.0-00:15.0 就是这款XX氨基酸洁面，洗完不紧绷
+00:15.0-00:20.0 链接我放评论区了
+输出：
+{"start":"00:05.0","end":"00:20.0","product":"XX氨基酸洁面","noAd":false}
 `
         const titleEl = document.querySelector('.video-info-title h1.video-title');
         const title = titleEl ? titleEl.textContent.trim() : '';
@@ -1326,31 +1525,19 @@
 以下是截取的部分字幕：\n
 ${subtitles.join('\n')}
 `;
-        const requestData = {
-            messages: [
-                {role: 'system', content: system_prompt,},
-                {role: 'user', content: user_prompt,}
-            ],
-            model: aiModel,
-            temperature: 0.2,
-            response_format: { type: "json_object" },
-            enable_thinking: false,
-            max_tokens: 200,
-        };
-
         const isGemini = selectedAI === 'gemini';
         let fetchUrl = apiUrl;
         let fetchOptions = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         };
+        let body;
 
         // --- 核心转换逻辑 ---
         if (isGemini) {
             // Gemini 的 URL 格式: 基础路径 + 模型名 + :generateContent?key=API_KEY
             fetchUrl = `${apiUrl}${aiModel}:generateContent?key=${apiKey}`;
-
-            fetchOptions.body = JSON.stringify({
+            body = {
                 contents: [{
                     parts: [{ text: user_prompt }]
                 }],
@@ -1360,14 +1547,14 @@ ${subtitles.join('\n')}
                 generationConfig: {
                     temperature: 0.2,
                     maxOutputTokens: 200,
-                    responseMimeType: "application/json" // 强制返回 JSON
+                    responseMimeType: "application/json"
                 }
-            });
+            };
         } else {
             fetchUrl = apiUrl;
             fetchOptions.headers.Authorization = `Bearer ${apiKey}`;
             fetchOptions.headers['Content-Type'] = 'application/json';
-            fetchOptions.body = JSON.stringify({
+            body = {
                 messages: [
                     { role: 'system', content: system_prompt },
                     { role: 'user', content: user_prompt }
@@ -1375,10 +1562,14 @@ ${subtitles.join('\n')}
                 model: aiModel,
                 temperature: 0.2,
                 response_format: { type: "json_object" },
+                enable_thinking: false,
+                thinking: { "type": "disabled" }, // glm-5.1
+                extra_body: {"thinking": {"type": "disabled"},"thinking_budget": 500},
                 max_tokens: 200
-            });
+            };
         }
 
+        fetchOptions.body = JSON.stringify(body);
 
         try {
             const response = await fetch(fetchUrl, fetchOptions);
@@ -1402,6 +1593,32 @@ ${subtitles.join('\n')}
 
             const rawData = await response.json();
             //debuglog('🤖AI返回原始数据：', rawData);
+
+            // --- 新增：提取并打印 token 消耗 ---
+            const logTokenUsage = (data, isGeminiFlag) => {
+                try {
+                    if (!isGeminiFlag) {
+                        // OpenAI: usage
+                        const usage = data.usage;
+                        if (usage) {
+                            log(`📊 Token: 输入 ${usage.prompt_tokens ?? '?'}, 生成 ${usage.completion_tokens ?? '?'}, 总计=${usage.total_tokens ?? '?'}`);
+                        } else {
+                            debuglog(`📊 未找到 token 消耗信息`);
+                        }
+                    } else {
+                        // Gemini: usageMetadata
+                        const usage = data.usageMetadata;
+                        if (usage) {
+                            log(`📊 Token (Gemini): 输入 ${usage.promptTokenCount ?? '?'}, 生成 ${usage.candidatesTokenCount ?? '?'}, 总计=${usage.totalTokenCount ?? '?'}`);
+                        } else {
+                            debuglog(`📊 未找到 token 消耗信息 (Gemini)`);
+                        }
+                    }
+                } catch (e) {
+                    debuglog(`📊 记录 token 消耗时出错: ${e.message}`);
+                }
+            };
+
             let aiRespText;
 
             if (isGemini) {
@@ -1411,6 +1628,9 @@ ${subtitles.join('\n')}
                 // OpenAI 的路径: data.choices[0].message.content
                 aiRespText = rawData.choices?.[0]?.message?.content;
             }
+
+            // 打印 token 消耗（此时 isGemini 已知）
+            logTokenUsage(rawData, isGemini);
 
             if (!aiRespText) throw new Error('AI 返回数据为空');
             debuglog(`🤖AI返回数据：`, aiRespText );
@@ -1454,7 +1674,7 @@ ${subtitles.join('\n')}
         if (!timestamp_range) return null;
         const times = timestamp_range.match(/\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?/g);
         if (!times || times.length < 2) return null;
-        log(timestamp_range, times[0], times[1]);
+        //log(timestamp_range, "云端提取时间戳:", times[0], times[1]);
         return {
             start: times[0],
             end: times[1]
@@ -1879,13 +2099,20 @@ ${subtitles.join('\n')}
         // --- 2. 定义所有数据源和配置 ---
         const aiOptions = [
             {value: 'aliyun', text: '阿里云（平台）', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-             model: ['qwen-plus', 'qwen-plus-latest', 'deepseek-v3.1','deepseek-v3', 'Moonshot-Kimi-K2-Instruct','glm-4.5','glm-4.5-air']
+             model: [
+                 //此处列出的是阿里云百炼平台上新出的模型，限时3个月免费，每个模型100万token额度，一直试用新模型，足够用了
+                 "glm-5.2","qwen3.5-ocr","kimi-k2.7-code","qwen3.7-max-2026-06-08","qwen3.7-plus","qwen3.7-plus-2026-05-26", // --2026-09
+                 "qwen3.7-max-2026-05-17","qwen3.7-max-preview","qwen3.7-max","qwen3.7-max-2026-05-20",            // --2026-08
+                 "glm-5.1","qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-35b-a3b","qwen3.6-max-preview",         // --2026-07
+                 "kimi-k2.6", "tongyi-xiaomi-analysis-flash","qwen-flash-character","tongyi-xiaomi-analysis-pro",
+                 "qwen3.5-plus-2026-04-20", "qwen3.6-27b","deepseek-v4-pro","deepseek-v4-flash",
+             ]
             },
-            { value: 'deepseek', text: '深度求索 DeepSeek', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-chat'] },
+            { value: 'deepseek', text: '深度求索 DeepSeek', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
             {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: ['kimi-k2-0905-preview','kimi-k2-0711-preview', 'kimi-k2.5', 'moonshot-v1-32k', 'moonshot-v1-8k' ] },
             {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: ['Qwen3-30B-A3B-Instruct-2507','DeepSeek-R1-Distill-Qwen-32B'] },
             {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: ['ernie-4.5-turbo-latest', 'qwen3-30b-a3b-instruct-2507','qwen3-14b'] },
-            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: ['GLM-4.5-Air','GLM-4.5'] },
+            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: ['GLM-5.1','GLM-5','GLM-4.5-Air','GLM-4.5'] },
             {value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-5.1-nano', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4o-mini', 'gpt-4o' ]},
             { value: 'custom1', text: '自定义AI-1', apiUrl: '', model: '' },
             { value: 'custom2', text: '自定义AI-2', apiUrl: '', model: '' }
@@ -1946,7 +2173,7 @@ ${subtitles.join('\n')}
         // --- 4. 创建UI主体，并动态生成表单 ---
         const configContainer = document.createElement('div');
         configContainer.id = CONFIG_POPUP_ID;
-        configContainer.style.cssText = ` position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 500px; padding: 20px; background: #fff; border: 1px solid #ccc; border-radius: 10px; z-index: 10000; font-size: 16px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); `;
+        applyPopupStyle(configContainer, { top: '50%' });
 
         const configTitle = document.createElement('h3');
         configTitle.textContent = '管理AI配置';
@@ -1975,8 +2202,8 @@ ${subtitles.join('\n')}
         createLink('阿里云', 'https://bailian.console.aliyun.com/?tab=model#/api-key', linksContainer);
         createLink('Deepseek', 'https://platform.deepseek.com/', linksContainer);
         createLink('Kimi', 'https://platform.moonshot.cn/console/api-keys/', linksContainer);
+        createLink('GLM', 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys', linksContainer);
         createLink('硅基流动', 'https://cloud.siliconflow.cn/sft-keejoek1ys/account/ak', linksContainer);
-        createLink('智谱清言', 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys', linksContainer);
         configContainer.appendChild(linksContainer);
 
         const buttonContainer = document.createElement('div');
@@ -2099,27 +2326,21 @@ ${subtitles.join('\n')}
     // ======================================================
     // ===========  配置界面：手动配置广告时间戳  =============
     // ======================================================
+
     async function manualAdTimestamps() {
-        // 1. 首先，尝试从当前URL获取BV号
         const isVideoPage = isTrueVideoPage();
         const bvFromUrl = await getBVNumber();
         const containerId = 'bili-ad-timestamp-editor';
-        const container = document.createElement('div');
+        let container = document.getElementById(containerId);
+
+        // 如果容器已存在，则先移除旧的（为了避免重复创建，但保留刷新功能）
+        if (container) {
+            container.remove();
+        }
+
+        container = document.createElement('div');
         container.id = containerId;
-        container.style.cssText = `
-                        position: fixed;
-                        top: 30%;
-                        left: 50%;
-                        transform: translate(-50%, -50%);
-                        width: 500px;
-                        padding: 20px;
-                        background: #fff;
-                        border: 1px solid #ccc;
-                        border-radius: 10px;
-                        z-index: 10000;
-                        font-size: 16px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-                    `;
+        applyPopupStyle(container);
 
         const title = document.createElement('h3');
         title.textContent = `手动配置广告时间戳`;
@@ -2133,7 +2354,7 @@ ${subtitles.join('\n')}
 
         const inputArea = document.createElement('div');
 
-        // --- 1. 创建一个统一的、可重用的“行构建器”  ---
+        // --- 创建输入行的辅助函数（与原逻辑一致）---
         function createInputRow(labelText, inputId, placeholder, initialValue = '', options = {}) {
             const row = document.createElement('div');
             row.style.cssText = 'display: flex; align-items: center; margin: 0 75px 12px 40px;';
@@ -2152,7 +2373,6 @@ ${subtitles.join('\n')}
             row.appendChild(label);
             row.appendChild(input);
 
-            // 辅助函数：执行跳转
             const jumpToTime = (timeStr, offset = 0) => {
                 const video = state.video || document.querySelector('video');
                 if (!video || !timeStr) return;
@@ -2165,34 +2385,34 @@ ${subtitles.join('\n')}
                 } catch (e) { alert('时间格式不正确'); }
             };
 
-            // 辅助函数：抓取当前时间
             const captureTime = () => {
                 const video = state.video || document.querySelector('video');
-                if (!video) { alert('未找到视频元素'); return; }
+                if (!video) {
+                    console.warn('未找到视频元素');
+                    return;
+                }
                 input.value = formatTimeTenths(video.currentTime);
             };
 
-            // 统一的按钮样式生成器
             const createSmallBtn = (text, bgColor, borderColor, callback) => {
                 const btn = document.createElement('button');
                 btn.textContent = text;
                 btn.onclick = callback;
                 btn.style.cssText = `
-                                margin-left: 10px;
-                                padding: 0 10px;
-                                height: 30px;
-                                font-size: 12px;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                white-space: nowrap;
-                                background-color: ${bgColor};
-                                border: 1px solid ${borderColor};
-                                color: #333;
-                             `;
+margin-left: 10px;
+padding: 0 10px;
+height: 30px;
+font-size: 12px;
+border-radius: 4px;
+cursor: pointer;
+white-space: nowrap;
+background-color: ${bgColor};
+border: 1px solid ${borderColor};
+color: #333;
+`;
                 return btn;
             };
 
-            // --- 按钮逻辑分支 (同时支持跳转与抓取) ---
             if (options.showJumpButton && initialValue) {
                 const jumpBtn = createSmallBtn('跳至此处', '#f0f0f0', '#ccc', () => {
                     jumpToTime(input.value, options.jumpOffset || 0);
@@ -2209,13 +2429,10 @@ ${subtitles.join('\n')}
             return { row, input };
         }
 
-        // --- 2. 使用新的行构建器来创建所有输入行 ---
         let bvInput, startTimeInput, endTimeInput;
-
         const bvInitialValue = isVideoPage ? bvFromUrl : '';
         const bvRowData = createInputRow('视频BV号:', 'bili-manual-bv-input', '非视频页面，请输入BV号', bvInitialValue);
         bvInput = bvRowData.input;
-
         if (isVideoPage) {
             bvInput.disabled = true;
             bvInput.style.backgroundColor = '#f9f9f9';
@@ -2223,91 +2440,142 @@ ${subtitles.join('\n')}
         }
         inputArea.appendChild(bvRowData.row);
 
-        const storedData = isVideoPage ? await getStoredAdTime(bvFromUrl) : null;
+        // 初始加载存储的数据（用于填充起始结束时间）
+        let storedData = isVideoPage ? await getStoredAdTime(bvFromUrl) : null;
         const start = storedData?.adTime?.start || '';
         const end = storedData?.adTime?.end || '';
 
-        const startTimeRowData = createInputRow('广告起始:', 'StartTime', '格式 00:00.0 或 01:02:03.4', start, { showJumpButton: start, jumpOffset: -3, enableCapture: true } );
+        const startTimeRowData = createInputRow('广告起始:', 'StartTime', '格式 00:00 或 05:13.4', start, { showJumpButton: start, jumpOffset: -3, enableCapture: true });
         startTimeInput = startTimeRowData.input;
-        const endTimeRowData = createInputRow( '广告结束:', ' EndTime', '格式 00:00.0 或 01:02:03.4', end, { showJumpButton: end, jumpOffset: 0, enableCapture: true } );
+        const endTimeRowData = createInputRow('广告结束:', 'EndTime', '格式 00:00 或 05:13.4', end, { showJumpButton: end, jumpOffset: 0, enableCapture: true });
         endTimeInput = endTimeRowData.input;
 
         inputArea.appendChild(startTimeRowData.row);
         inputArea.appendChild(endTimeRowData.row);
 
-        // --- 4. 【UI优化】右侧竖条按钮的定位 ---
-        if (isVideoPage) {
-            const noAdButton = createButton('');
-            const rightPosition = '20px';
+        mainContentWrapper.appendChild(inputArea);
+        container.appendChild(mainContentWrapper);
 
-            noAdButton.style.cssText = `
-                            position: absolute;
-                            top: 0;
-                            right: ${rightPosition};
-                            height: 100%;
-                            width: 45px;
-                            writing-mode: vertical-lr;
-                            text-orientation: mixed;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            border-radius: 0 8px 8px 0;
-                            border-radius: 5px;
-                            border: none;
-                            cursor: pointer;
-                            font-size: 14px;
-                            letter-spacing: 2px;
-                            box-shadow: -2px 0 5px rgba(0,0,0,0.05);
-                        `;
+        // 按钮容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = 'display: flex; justify-content: center; align-items: center; margin-top: 20px; gap: 10px;';
 
-            const currentData = JSON.parse(localStorage.getItem(bvFromUrl) || '{}');
-            if (currentData.noAd) {
+        // ----- 核心刷新函数 -----
+        async function refreshManualUI() {
+            const currentBv = bvInput.value.trim();
+            if (!currentBv) return;
+            const freshData = await getStoredAdTime(currentBv);
+            // 更新起始结束输入框
+            if (freshData && freshData !== 'noAd' && freshData.adTime) {
+                startTimeInput.value = freshData.adTime.start || '';
+                endTimeInput.value = freshData.adTime.end || '';
+            } else {
+                startTimeInput.value = '';
+                endTimeInput.value = '';
+            }
+            // 更新无广告按钮的状态
+            const isNoAd = freshData === 'noAd';
+            if (isNoAd) {
                 noAdButton.textContent = '撤销该页无广告';
                 noAdButton.style.backgroundColor = '#f39c12';
                 noAdButton.style.color = 'white';
-                noAdButton.onclick = async () => {
-                    document.body.removeChild(container);
-                    let currentData = await GM_getValue(bvFromUrl, {});
-                    delete currentData.noAd;
-                    await GM_setValue(bvFromUrl, currentData);
-                    await clearAllCachesForBV(bvFromUrl);
-                    log(`已取消 ${bvFromUrl} 的无广告标记`);
-                };
             } else {
                 noAdButton.textContent = '标记该页无广告';
                 noAdButton.style.backgroundColor = '#27ae60';
                 noAdButton.style.color = 'white';
-                noAdButton.onclick = async () => {
-                    //clearUI();
-                    uiWindowManager.closeAll();
-                    await markVideoAsNoAd(bvFromUrl, {upload: true, reason: 'manual_cloud'});
-                    log(`已标记为无广告！`);
-                };
             }
 
-            mainContentWrapper.appendChild(noAdButton);
+            // ========== 更新删除按钮的启用/禁用状态 ==========
+            const deleteBtn = document.getElementById('bili-manual-delete-btn');
+            if (deleteBtn) {
+                // 判断是否有记录：要么是 noAd，要么有广告时间戳
+                const hasRecord = (freshData === 'noAd') || (freshData && freshData.adTime && freshData.adTime.start && freshData.adTime.end);
+                deleteBtn.disabled = !hasRecord;
+                if (hasRecord) {
+                    deleteBtn.disabled = false;
+                    deleteBtn.style.opacity = '1';
+                    deleteBtn.style.cursor = 'pointer';
+                } else {
+                    deleteBtn.disabled = true;
+                    deleteBtn.style.opacity = '0.6';
+                    deleteBtn.style.cursor = 'not-allowed';
+                }
+            }
         }
 
-        // --- 5. 组装DOM ---
-        mainContentWrapper.appendChild(inputArea);
-        container.appendChild(mainContentWrapper);
-
-        // --- 3. 按钮容器和按钮 (逻辑简化) ---
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.cssText = 'display: flex; justify-content: center; align-items: center; margin-top: 20px; gap: 10px;';
-
-        // 创建一个函数来生成带样式的按钮
-        function createButton(text, onClick) {
-            const button = document.createElement('button');
-            button.textContent = text;
-            // 定义一个基础的按钮样式
-            button.style.cssText = `padding: 3px 3px; border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px; cursor: pointer; font-size: 14px;`;
-            if (onClick) button.onclick = onClick;
-            return button;
+        // ----- 无广告按钮（动态刷新，不关闭窗口）-----
+        let noAdButton;
+        if (isVideoPage) {
+            noAdButton = createButton('', async () => {
+                const currentBv = bvInput.value.trim();
+                const freshData = await getStoredAdTime(currentBv);
+                const noAd = freshData === 'noAd';
+                const rawData = await GM_getValue(currentBv, {});
+                let currentData = rawData;
+                if (typeof rawData === 'string') {
+                    try {
+                        currentData = JSON.parse(rawData);
+                    } catch(e) { currentData = {}; }
+                }
+                if (noAd) {
+                    // 撤销无广告
+                    delete currentData.noAd;
+                    await GM_setValue(currentBv, currentData);
+                    await clearAllCachesForBV(currentBv);
+                    log(`已取消 ${currentBv} 的无广告标记`);
+                    await refreshManualUI();
+                } else {
+                    // 标记无广告
+                    currentData.noAd = true;
+                    delete currentData.timestamps;
+                    await GM_setValue(currentBv, currentData);
+                    await markVideoAsNoAd(currentBv, { upload: true, reason: 'manual_cloud' });
+                    log(`已标记 ${currentBv} 为无广告！`);
+                    await refreshManualUI();
+                }
+            });
+            noAdButton.style.cssText = `
+            color: white;
+            padding: 4px 5px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+            // 初始设置按钮文本
+            const initialStored = await getStoredAdTime(bvFromUrl);
+            if (initialStored === 'noAd') {
+                noAdButton.textContent = '撤销该页无广告';
+                noAdButton.style.backgroundColor = '#f39c12';
+            } else {
+                noAdButton.textContent = '标记该页无广告';
+                noAdButton.style.backgroundColor = '#27ae60';
+            }
+            buttonContainer.appendChild(noAdButton);
         }
 
+        // 删除按钮（始终显示，但根据有无记录禁用）
+        let deleteBtn = null;
+        if (isVideoPage) {
+            deleteBtn = createButton('删除该页记录', async () => {
+                const currentBv = bvFromUrl;
+                await GM_deleteValue(currentBv);
+                state.adTime = null;
+                await refreshManualUI();
+                await clearAllCachesForBV(currentBv);
+                log(`已清除 ${currentBv} 数据库数据`);
+            });
+            deleteBtn.id = 'bili-manual-delete-btn';
+            deleteBtn.style.color = '#e74c3c';
+            // 初始状态由 refreshManualUI 设置，先临时禁用
+            //deleteBtn.disabled = true;
+            //deleteBtn.style.opacity = '0.6';
+            //deleteBtn.style.cursor = 'not-allowed';
+            buttonContainer.appendChild(deleteBtn);
+        }
 
-        // “保存”按钮
+        // 保存按钮
         const saveTimestampButton = createButton('保存配置', async () => {
             const bvNumber = bvFromUrl || bvInput.value.trim();
             if (!bvNumber || !bvNumber.startsWith('BV')) {
@@ -2315,16 +2583,17 @@ ${subtitles.join('\n')}
                 return;
             }
 
+            const freshData = await getStoredAdTime(bvNumber);
             let startTime = startTimeInput.value.trim();
             let endTime = endTimeInput.value.trim();
+
             if (startTime && endTime) {
-                // 检查时间格式是否正确（支持 0.1s 精度）
                 const timeRegex = /^(\d{1,2}:\d{2}(?:\.\d)?|\d{1,2}:\d{2}:\d{2}(?:\.\d)?)$/;
-                if (!timeRegex.test(startTime) ) {
+                if (!timeRegex.test(startTime)) {
                     if (/^\d{4}$/.test(startTime)) {
                         startTime = startTime.substring(0, 2) + ':' + startTime.substring(2);
                     } else {
-                        alert('请输入正确的时间格式（例如：05:30.0 或 01:30:45.3）');
+                        alert('请输入正确的时间格式（例如：05:30 或 01:12:45.3）');
                         return;
                     }
                 }
@@ -2332,93 +2601,46 @@ ${subtitles.join('\n')}
                     if (/^\d{4}$/.test(endTime)) {
                         endTime = endTime.substring(0, 2) + ':' + endTime.substring(2);
                     } else {
-                        alert('请输入正确的时间格式（例如：05:30.0 或 01:30:45.3）');
+                        alert('请输入正确的时间格式（例如：05:30 或 01:12:45.3）');
                         return;
                     }
                 }
-                // 保存广告时间戳到本地、云端
                 const dataTimestamp = { start: startTime, end: endTime };
-                state.uploaded = false; //手动设置已上传标记为 false
-                monitorTimestamp(bvNumber, dataTimestamp, 'manual', {uploadCloud: true, saveTimestamp: true});
-                //document.body.removeChild(container);
+                state.uploaded = false;
+                uiWindowManager.closeAll();
+                await monitorTimestamp(bvNumber, dataTimestamp, 'manual', { uploadCloud: true, saveTimestamp: true });
+                // 保存后刷新界面
+                //await refreshManualUI();
+            } else if (freshData === 'noAd') {
                 uiWindowManager.closeAll();
             } else {
                 alert('请输入完整的广告时间戳！');
             }
         });
-
         buttonContainer.appendChild(saveTimestampButton);
-        container.appendChild(buttonContainer);
 
-        if (isVideoPage) {
-            const bvNumber = bvFromUrl;
-            if (storedData) {
-                // “删除”按钮
-                const delBtn = createButton('删除该页记录', async () => {
-                    await GM_deleteValue(bvNumber);
-                    state.adTime = null;
-                    clearAllCachesForBV(bvNumber);
-                    log(`已清除 ${bvNumber} 数据库数据`);
-                    uiWindowManager.closeAll();
-                });
-                delBtn.style.color = '#e74c3c';
-                buttonContainer.appendChild(delBtn);
-            }
-        }
-
-        // “关闭”按钮
+        // 关闭按钮
         const cancelButton = createButton('关闭界面', () => {
-            //document.body.removeChild(container);
             uiWindowManager.closeAll();
         });
         buttonContainer.appendChild(cancelButton);
-
-        //插入按钮容器
+        container.appendChild(buttonContainer);
         document.body.appendChild(container);
 
-        /* 工具函数*/
-        // 从【所有】缓存中，彻底移除一个BV号的记录。
+        // 辅助函数：清除所有缓存
         async function clearAllCachesForBV(bvNumber) {
-            log(`从所有缓存中彻底清理 [${bvNumber}]...`);
-
-            // 1. 清理内存缓存 (scriptCache)
             const noAdIndex = scriptCache.noAdDbKeys.indexOf(bvNumber);
             if (noAdIndex > -1) scriptCache.noAdDbKeys.splice(noAdIndex, 1);
-
             const mainDbIndex = scriptCache.mainAdDbKeys.indexOf(bvNumber);
             if (mainDbIndex > -1) scriptCache.mainAdDbKeys.splice(mainDbIndex, 1);
-            debuglog(`  -> 🧠 内存缓存已清理。`);
-
-            // 2. 清理GM存储中的跨域缓存摘要
             const crossDomainCache = await GM_getValue('biliCrossDomainCache', { mainAdDbKeys: [], noAdDbKeys: [] });
-
             const noAdCacheIndex = crossDomainCache.noAdDbKeys.indexOf(bvNumber);
             if (noAdCacheIndex > -1) crossDomainCache.noAdDbKeys.splice(noAdCacheIndex, 1);
-
             const mainCacheIndex = crossDomainCache.mainAdDbKeys.indexOf(bvNumber);
             if (mainCacheIndex > -1) crossDomainCache.mainAdDbKeys.splice(mainCacheIndex, 1);
-
             await GM_setValue('biliCrossDomainCache', crossDomainCache);
-            debuglog(`  -> 🌍 GM跨域缓存摘要已清理。`);
-        }
-
-        function clearUI(){
-            state.adTime = null;
-            if (startTimeInput) {
-                startTimeInput.value = '';
-            }
-            if (endTimeInput) {
-                endTimeInput.value = '';
-            }
-
-            if (state.video) {
-                state.video.removeEventListener('timeupdate', handleTimeUpdate);
-                state.video = null;
-            }
-            document.body.removeChild(container);
         }
     }
-
 
     // ================================================
     // ============= UP白名单管理模块 ==================
@@ -2453,7 +2675,7 @@ ${subtitles.join('\n')}
 
         // 4. 更新UI (逻辑不变)
         updateWhiteListDisplay();
-        log(`✅ 白名单+ UP主 [${upName}]`);
+        log(`✅ 白名单+ [${upName}]`);
     }
 
     /** (新增) 将UP主从白名单移除*/
@@ -2512,20 +2734,7 @@ ${subtitles.join('\n')}
     async function monitorUpWhiteList() {
         const UpWhiteListContainer = document.createElement('div');
         UpWhiteListContainer.id = 'UpWhiteListContainer';
-        UpWhiteListContainer.style.cssText = `
-                    position: fixed;
-                    top: 30%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    width: 500px;
-                    padding: 20px;
-                    background: #fff;
-                    border: 1px solid #ccc;
-                    border-radius: 10px;
-                    z-index: 10000;
-                    font-size: 16px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-                `;
+        applyPopupStyle(UpWhiteListContainer);
 
         const Title = document.createElement('h3');
         Title.textContent = `手动管理白名单（跳过检测）`;
@@ -2606,15 +2815,6 @@ ${subtitles.join('\n')}
         toggleCurrentUpButton.id = 'bili-add-current-up-btn';
         toggleCurrentUpButton.style.cssText = `color: white; padding: 4px 5px; margin: 0 5px; border: none; border-radius: 4px;`;
 
-        // 创建一个函数来生成带样式的按钮
-        function createButton(text, onClick) {
-            const button = document.createElement('button');
-            button.textContent = text;
-            button.style.cssText = `padding: 3px 3px; border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px; cursor: pointer; font-size: 14px;`;
-            if (onClick) button.onclick = onClick;
-            return button;
-        }
-
         // 创建“完成”按钮
         const finishButton = createButton('关闭界面', () => {
             //document.body.removeChild(UpWhiteListContainer);
@@ -2641,6 +2841,112 @@ ${subtitles.join('\n')}
                 }
             }
         });
+    }
+
+    // =================================================
+    // ==============  配置界面：脚本高级配置 ==============
+    // =================================================
+    async function openSettingsUI() {
+        const containerId = 'ScriptSettingsContainer';
+        const settingsContainer = document.createElement('div');
+        settingsContainer.id = containerId;
+        applyPopupStyle(settingsContainer, { width: '450px', padding: '25px', top: '50%' });
+
+        const title = document.createElement('h3');
+        title.textContent = '脚本高级配置';
+        title.style.cssText = 'text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 18px; font-weight: 600; color: #333; cursor: move;';
+        settingsContainer.appendChild(title);
+
+        draggableManager.makeDraggable(settingsContainer, title);
+
+        const configItems = [
+            { key: 'SHOW_DEBUG_LOG', label: '输出调试日志', type: 'checkbox' },
+            { key: 'SHOW_DEBUG_TIMEGAP', label: '显示日志时间间隔', type: 'checkbox' },
+            { key: 'FORCE_GIT_CONFIG', label: '强制刷新云端配置', type: 'checkbox' },
+            { key: 'FORCE_AI_ACTIVE', label: '强制启用AI分析', type: 'checkbox' },
+            { key: 'DOWNLOAD_SUBTITLE_FILE', label: '下载字幕文件', type: 'checkbox' },
+            { key: 'SHORT_VIDEO_DURATION', label: '短视频判定时长(s)', type: 'number' },
+            { key: 'backupIntervals', label: '数据备份周期(天)', type: 'number' },
+            { key: 'ANALYZE_DNAMAKU', label: '指定弹幕文本统计', type: 'text' }
+        ];
+
+        const form = document.createElement('div');
+        form.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
+
+        configItems.forEach((item, index) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; align-items: center; justify-content: space-between;';
+
+            const labelContainer = document.createElement('div');
+            labelContainer.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+            const numberSpan = document.createElement('span');
+            numberSpan.textContent = `${index + 1}.`;
+            numberSpan.style.cssText = 'color: #999; font-weight: bold; min-width: 20px;';
+            labelContainer.appendChild(numberSpan);
+
+            const label = document.createElement('label');
+            label.textContent = item.label;
+            label.style.cssText = 'color: #555; font-weight: 500;';
+            labelContainer.appendChild(label);
+
+            row.appendChild(labelContainer);
+
+            let input;
+            if (item.type === 'checkbox') {
+                input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = scriptConfig[item.key];
+                input.style.cssText = 'width: 18px; height: 18px; cursor: pointer;';
+            } else {
+                input = document.createElement('input');
+                input.type = item.type;
+                input.value = scriptConfig[item.key] ?? '';
+                input.style.cssText = 'width: 150px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; transition: border-color 0.2s;';
+                input.onfocus = () => input.style.borderColor = '#00a1d6';
+                input.onblur = () => input.style.borderColor = '#ddd';
+            }
+            input.id = `config_${item.key}`;
+            row.appendChild(input);
+            form.appendChild(row);
+        });
+
+        settingsContainer.appendChild(form);
+
+        const btnContainer = document.createElement('div');
+        btnContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px;';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = '保存并应用';
+        saveBtn.style.cssText = 'padding: 8px 16px; background: #00a1d6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s;';
+        saveBtn.onmouseover = () => saveBtn.style.background = '#00b5e5';
+        saveBtn.onmouseout = () => saveBtn.style.background = '#00a1d6';
+        saveBtn.onclick = async () => {
+            configItems.forEach(item => {
+                const input = document.getElementById(`config_${item.key}`);
+                if (item.type === 'checkbox') {
+                    scriptConfig[item.key] = input.checked;
+                } else if (item.type === 'number') {
+                    scriptConfig[item.key] = parseFloat(input.value);
+                } else {
+                    scriptConfig[item.key] = input.value || null;
+                }
+            });
+            await GM_setValue('scriptConfig', scriptConfig);
+            log('✅ 配置已保存');
+            uiWindowManager.closeAll();
+        };
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = '取消';
+        cancelBtn.style.cssText = 'padding: 8px 16px; background: #f5f5f5; color: #666; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-weight: 500;';
+        cancelBtn.onclick = () => uiWindowManager.closeAll();
+
+        btnContainer.appendChild(cancelBtn);
+        btnContainer.appendChild(saveBtn);
+        settingsContainer.appendChild(btnContainer);
+
+        document.body.appendChild(settingsContainer);
     }
 
     const uiWindowManager = {
@@ -2672,44 +2978,49 @@ ${subtitles.join('\n')}
     }
 
     //----------------------------整合弹幕识别脚本-------------------------------
-    const timeRegexList = [
-        { regex: /\b(\d{1,2})[:：]([0-5]\d)\b/, isFuzzy: false }, // 5:14
-        { regex: /(\d{1,2}|[一二三四五六七八九十]{1,3})分(\d{1,2}|[零一二三四五六七八九十]{1,3})/, isFuzzy: false },
-        { regex: /(\d{1,2})\.(\d{1,2})[郎朗]/, isFuzzy: false },
-        { regex: /(?<!\d)(?:(\d{2})\.(\d{1,2})|(\d{1,2})\.(\d{2}))(?![\d郎君侠降秒分：wk+＋])/i, isFuzzy: true } // 模糊时间戳：纯数字 5.14，排除1.9这种
-    ];
-    const cnNumMap = {
-        "零": 0, "一": 1, "二": 2,"两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10
-    };
-
-    function parseNumber(char) {
-        return cnNumMap[char] || parseInt(char) || 0;
-    }
-
     function parseChineseNumber(ch) {
+        const parseNumber = (char) => {
+            const cnNumMap = {"零": 0, "一": 1, "二": 2,"两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10};
+            return cnNumMap[char] || parseInt(char) || 0;
+        }
         if (ch.length === 1) return parseNumber(ch);
         if (ch.length === 2) return (ch[1] === "十") ? parseNumber(ch[0]) * 10 : (10 + parseNumber(ch[1]));
         if (ch.length === 3 && ch[1] === "十") return parseNumber(ch[0]) * 10 + parseNumber(ch[2]);
         return 0;
     }
 
-    const TIME_GROUP_THRESHOLD = 10;
-    const MIN_JUMP_INTERVAL = 5; //跳转冷静期，防止频繁跳转
-    const MIN_COUNT_TO_LOG = 2;
-
     function extractTimestamps(text) {
         if (/[百千万亿wk]/i.test(text)) return null;
         const cleanText = text.replace(/\s+/g, '');
+        const timeRegexList = [
+            { regex: /\b(\d{1,2})[:：]([0-5]\d)\b/, isFuzzy: false }, // 5:14
+            { regex: /(\d{1,2}|[一二三四五六七八九十]{1,3})分(\d{1,2}|[零一二三四五六七八九十]{1,3})/, isFuzzy: false },
+            { regex: /(\d{1,2})\.(\d{1,2})[郎朗]/, isFuzzy: false },
+            { regex: /(\d{3,4})工程/, isFuzzy: false, isProject: true }, // 944工程 -> 9:44
+            { regex: /(?<!\d)(?:(\d{2})\.(\d{1,2})|(\d{1,2})\.(\d{2}))(?![\d郎君侠降秒分：wk+＋])/i, isFuzzy: true } // 模糊时间戳：纯数字 5.14，排除1.9这种
+        ];
 
         for (let i = 0; i < timeRegexList.length; i++) {
-            const { regex, isFuzzy } = timeRegexList[i];
+            const { regex, isFuzzy, isProject } = timeRegexList[i];
             const match = regex.exec(cleanText);
             if (match) {
-                const parts = [match[1], match[2]];
-                const isChinese = parts.map(p => /[一二三四五六七八九十]/.test(p));
-                const values = parts.map((p, idx) => isChinese[idx] ? parseChineseNumber(p) : parseInt(p) || 0);
-                const ts = values[0] * 60 + values[1];
-                const isAdTs = /[郎朗君菌侠降猜秒谢我]/.test(text) || (isChinese[0] !== isChinese[1])
+                let ts;
+                let isAdTs = false;
+                if (isProject) {
+                    const numStr = match[1];
+                    const minutes = parseInt(numStr.slice(0, numStr.length - 2));
+                    const seconds = parseInt(numStr.slice(numStr.length - 2));
+                    if (seconds >= 60) continue;
+                    ts = minutes * 60 + seconds;
+                    isAdTs = true; // "工程" 格式通常直接代表广告时间戳
+                } else {
+                    const parts = [match[1], match[2]];
+                    const isChinese = parts.map(p => /[一二三四五六七八九十]/.test(p));
+                    const values = parts.map((p, idx) => isChinese[idx] ? parseChineseNumber(p) : parseInt(p) || 0);
+                    ts = values[0] * 60 + values[1];
+                    isAdTs = /[郎朗君菌侠降猜秒谢我]/.test(text) || (isChinese[0] !== isChinese[1]);
+                }
+
                 if (!isNaN(ts) && ts >= 30) { //限制广告时间戳位置在00:30之后
                     return {
                         timestamp: ts,
@@ -2742,29 +3053,19 @@ ${subtitles.join('\n')}
                 const text = node.textContent.trim();
                 if (text.length === 0 || text === '9麤') continue;
 
+                const targetText = scriptConfig.ANALYZE_DNAMAKU;
+                if (targetText) {
+                    if (text === targetText) state.danmakuExactCount++;
+                    if (text.includes(targetText)) state.danmakuContainsCount++;
+                }
+
                 const result = extractTimestamps(text);
                 if (result) {
                     const ts = result.timestamp;
                     const currentTime = state.video.currentTime;
 
                     // --- 核心修改：在这里实现“写入时聚类” ---
-                    let clusterKey = null;
-                    for (const existingTsKey in state.danmakuTimestampStore) {
-                        const existingTs = Number(existingTsKey);
-                        if (Math.abs(ts - existingTs) <= TIME_GROUP_THRESHOLD) {
-                            clusterKey = existingTs;
-                            break;
-                        }
-                    }
-                    if (clusterKey === null) {
-                        clusterKey = ts;
-                        state.danmakuTimestampStore[clusterKey] = [];
-                    }
-                    const occurrence = {
-                        savedAt: currentTime,
-                        count: result.isAdTs ? 2 : 1
-                    };
-                    state.danmakuTimestampStore[clusterKey].push(occurrence);
+                    addDanmakuToStore(ts, currentTime, result.isAdTs);
                 }
             }
         }
@@ -2779,9 +3080,10 @@ ${subtitles.join('\n')}
             return;
         }
 
-        const conclusion = analyzeDanmakuStore({ isRealtime: true });
-        if (conclusion) {
-            await monitorTimestamp(state.currentBV, conclusion, conclusion.source, {uploadCloud:true, saveTimestamp: true});
+        const dataTimestamp = analyzeDanmakuStore({ isRealtime: true });
+        if (dataTimestamp) {
+            const bvNumber = state.currentBV;
+            await monitorTimestamp(bvNumber, dataTimestamp, dataTimestamp.source, {uploadCloud:true, saveTimestamp: true});
             danmakuManager.stop();
         }
         return;
@@ -2803,6 +3105,10 @@ ${subtitles.join('\n')}
                 clearInterval(internalInterval);
                 internalInterval = null;
                 log('🚫 已停止弹幕监控');
+                const targetText = scriptConfig.ANALYZE_DNAMAKU;
+                if (targetText && (state.danmakuExactCount > 0 || state.danmakuContainsCount > 0)) {
+                    debuglog(`📊 实时弹幕统计 [${targetText}]: 完全相同=${state.danmakuExactCount}, 包含文本=${state.danmakuContainsCount}`);
+                }
             }
             isRunning = false;
         };
@@ -2823,18 +3129,21 @@ ${subtitles.join('\n')}
                 isRunning = true;
                 log('🔛 尝试启动弹幕监控...');
                 try {
-                    const auxiliaryContainer = await waitForElement('.bpx-player-auxiliary', 5000);
-                    const danmakuHeader = auxiliaryContainer.querySelector('.bui-collapse-header');
-                    const danmakuWrap = auxiliaryContainer.querySelector('.bui-collapse-wrap');
+                    if (!state.danmakuCollapsed) {
+                        const auxiliaryContainer = await waitForElement('.bpx-player-auxiliary', 5000);
+                        const danmakuHeader = auxiliaryContainer.querySelector('.bui-collapse-header');
+                        const danmakuWrap = auxiliaryContainer.querySelector('.bui-collapse-wrap');
 
-                    if (danmakuHeader && danmakuWrap && danmakuWrap.classList.contains('bui-collapse-wrap-folded')) {
-                        debuglog('  -> 展开弹幕...');
-                        danmakuHeader.click();
-                        setTimeout(() => {
-                            if (document.body.contains(danmakuHeader)) {
-                                danmakuHeader.click();
-                            }}, 3000);
-                        await randomSleep(50);
+                        if (danmakuHeader && danmakuWrap && danmakuWrap.classList.contains('bui-collapse-wrap-folded')) {
+                            debuglog('  -> 展开弹幕...');
+                            danmakuHeader.click();
+                            state.danmakuCollapsed = true;
+                            setTimeout(() => {
+                                if (document.body.contains(danmakuHeader)) {
+                                    danmakuHeader.click();
+                                }}, 3000);
+                            await randomSleep(50);
+                        }
                     }
                 } catch (e) {
                     debuglog("  -> 展开弹幕列表失败 :", e.message);
@@ -2850,7 +3159,7 @@ ${subtitles.join('\n')}
                     if (container) {
                         clearInterval(checkInterval);
 
-                        log('📸绑定弹幕容器监控');
+                        debuglog('📸绑定弹幕容器监控');
                         internalObserver = new MutationObserver(handleDanmakuMutations);
                         internalObserver.observe(container, { childList: true, subtree: true });
                         internalInterval = setInterval(() => {
@@ -2874,14 +3183,14 @@ ${subtitles.join('\n')}
 
     /*** (重构版) “纯粹的”页面观察器，只负责异步等待关键元素加载完毕。*/
     async function initPageObserver() {
-        log('等待播放器元素加载...');
+        debuglog('等待播放器元素加载...');
         try {
             const videoArea = await waitForElement('.bpx-player-video-area');
             const video = await waitForElement('video', 10000, videoArea);
-            log('✅ -> 加载成功');
+            log(`✅ 播放器加载成功`);
             return video;
         } catch (error) {
-            log(`❌ -> 加载失败, ${error.message}`);
+            log(`❌ 播放器加载失败, ${error.message}`);
             return null;
         }
     }
@@ -2971,28 +3280,52 @@ ${subtitles.join('\n')}
                 }
 
                 const currentBV = await getBVNumber();
-                if (currentBV) {
-                    if (currentBV !== state.currentBV || (!state.video && !state.isHandling)) {
-                        handlePageChanges();
+                if (!currentBV) return;
+
+                const domVideo = document.querySelector('.bpx-player-video-area video');
+                if (!domVideo) return;
+
+                const videoChanged = domVideo !== state.video;
+                const bvChanged = currentBV !== state.currentBV;
+                //domVideo.classList.contains('bpx-player-seamless-replacement');
+
+                // 情况1：BV 未变，仅 video 元素变更
+                if (!bvChanged && videoChanged && state.video) {
+                    debuglog('检测到 video 元素变更（前后台切换），仅重新绑定事件，不重置状态');
+                    debuglog(domVideo, state.video);
+                    if (state.video && state.video.removeEventListener) {
+                        state.video.removeEventListener('timeupdate', handleTimeUpdate);
+                        state.video._biliAdSkipBound = false;
                     }
+                    state.video = domVideo;
+                    // 重新绑定事件（但不需要重新分析广告时间戳）
+                    await bindVideoEvents(state.video);
+                    return;
+                }
+
+                // 情况2：BV 变化，或尚未初始化（state.video 为空且未在处理中）
+                if (bvChanged || (!state.video && !state.isHandling)) {
+                    state.video = domVideo;
+                    handlePageChanges(); // 全流程重置、分析广告、绑定事件
                 }
             });
         };
 
+
+
         const mainObserver = new MutationObserver(mainObserverCallback);
         const createMainObserver = () => {
-            // 观察子节点变化 (childList) 和 字符数据变化 (characterData)
-            // 虽然 Vue 通常是替换节点内容，但加上 subtree 比较保险
             mainObserver.observe(document.body, { childList: true, subtree: true });
         }
 
         if (document.body) {
             createMainObserver();
-            log('✅ 主导航观察器已启动 (SPA 适配版)');
+            log('✅ 主导航观察器已启动');
         } else {
             window.addEventListener('DOMContentLoaded', createMainObserver , { once: true });
         }
     }
+
 
     /**
                  * (静默巡查核心) 通过 x/player/wbi/v2 接口获取AI字幕的URL。
@@ -3029,7 +3362,8 @@ ${subtitles.join('\n')}
 
             const data = await response.json();
             if (data.code !== 0) throw new Error(`API returned error code: ${data.code}`);
-
+            const upower = data?.data?.is_upower_exclusive;
+            if (upower) log("充电视频");
             const subtitles = data?.data?.subtitle?.subtitles;
             if (subtitles && subtitles.length > 0) {
                 // 查找中文AI字幕
@@ -3082,7 +3416,7 @@ ${subtitles.join('\n')}
 
             // 1. 计算总权重
             const totalCount = cleanedOccurrences.reduce((sum, occ) => sum + occ.count, 0);
-            if (totalCount < MIN_COUNT_TO_LOG) continue;
+            if (totalCount < 2) continue;
 
             // 2. 从 cleanedOccurrences 中筛选出有效的前置弹幕
             const validStartCandidates = cleanedOccurrences.filter(occ =>ts > occ.savedAt && ts - occ.savedAt > 10);
@@ -3339,8 +3673,7 @@ ${subtitles.join('\n')}
                 'biliUpScanState',
                 'bili_wbi_keys',
                 'BiliAdSkip_TransitCache',
-                // 历史迁移与维护标记
-                'bili_ls_migrated_v2',
+                'biliadskip_migrated_v2',
             ];
 
             let videoCount = 0;
@@ -3481,14 +3814,20 @@ ${subtitles.join('\n')}
     /** (最终版) 处理解码后的弹幕数组，并将其送入弹幕分析引擎。*/
     function processDecodedDanmakus(danmakus) {
         if (!danmakus || danmakus.length === 0) return;
-        debuglog(`🔓弹幕: ${danmakus.length}`);
-        let count = 0;
+        debuglog(`🔓弹幕数: ${danmakus.length}`);
+        let exactCount = 0;
+        let containsCount = 0;
+        const targetText = scriptConfig.ANALYZE_DNAMAKU;
+
         for (const dm of danmakus) {
             const text = dm.content;
             if (!text) continue;
-            if (ANALYZE_DNAMAKU && ANALYZE_DNAMAKU === text) {
-                count ++;
+
+            if (targetText) {
+                if (text === targetText) exactCount++;
+                if (text.includes(targetText)) containsCount++;
             }
+
             const result = extractTimestamps(text);
             if (result) {
                 const ts = result.timestamp;
@@ -3499,26 +3838,12 @@ ${subtitles.join('\n')}
                        (ts <= savedAt && savedAt - ts < 8));
                 if (!shouldSave) continue;
 
-                let clusterKey = null;
-                for (const existingTsKey in state.danmakuTimestampStore) {
-                    const existingTs = Number(existingTsKey);
-                    if (Math.abs(ts - existingTs) <= TIME_GROUP_THRESHOLD) {
-                        clusterKey = existingTs;
-                        break;
-                    }
-                }
-                if (clusterKey === null) {
-                    clusterKey = ts;
-                    state.danmakuTimestampStore[clusterKey] = [];
-                }
-
-                const occurrence = { savedAt, count: result.isAdTs ? 2 : 1 };
-                state.danmakuTimestampStore[clusterKey].push(occurrence);
+                addDanmakuToStore(ts, savedAt, result.isAdTs);
                 debuglog(`📥采集: ${formatTime(savedAt)} -> [${formatTime(ts)}]`);
             }
         }
-        if (ANALYZE_DNAMAKU ) {
-            debuglog('弹幕匹配数量：', ANALYZE_DNAMAKU, count);
+        if (targetText) {
+            debuglog(`📊 弹幕统计 [${targetText}]: 完全相同=${exactCount}, 包含文本=${containsCount}`);
         }
     }
 
@@ -3702,7 +4027,7 @@ ${subtitles.join('\n')}
                     logContext += ``;
                 }
                 const receivedCount = decodedElems ? decodedElems.length : 0;
-                log(`-> [弹幕] 分包 ${logContext}: %c${receivedCount}%c 条`, 'color: #3498db; font-weight: bold;', 'color: initial;');
+                log(`-> [弹幕] 分包 ${logContext}: %c${receivedCount}%c 条`, boldGreen, 'color: initial;');
 
 
                 if (decodedElems && decodedElems.length > 0) {
@@ -3787,7 +4112,7 @@ ${subtitles.join('\n')}
                 throw new Error(`评论API返回错误: ${data.message} (code: ${data.code})`);
             }
 
-            debuglog('✅ 评论数据: ', data.data);
+            //debuglog('✅ 评论数据: ', data.data);
             return data.data;
 
         } catch (error) {
@@ -4001,11 +4326,7 @@ ${subtitles.join('\n')}
 
     /** 【网络拦截器】 - 最终诊断版 */
     function installNetworkInterceptor() {
-        if (window.isUltimateInterceptorInstalled) {
-            return;
-        } else {
-            window.isUltimateInterceptorInstalled = true;
-        }
+        if (window.isUltimateInterceptorInstalled) return;
 
         try {
             const originalXHR_open = window.XMLHttpRequest.prototype.open;
@@ -4023,7 +4344,11 @@ ${subtitles.join('\n')}
                             //log(`✅ 捕获【弹幕】请求...`);
                             if (this.response instanceof ArrayBuffer) {
                                 const decoded = await decodeDanmakuSo(this.response);
-                                if (decoded) await processDecodedDanmakus(decoded);
+                                try {
+                                    await processDecodedDanmakus(decoded);
+                                } catch (e) {
+                                    console.error("❌ 弹幕decoded失败:", e);
+                                }
                             }
                         } else if (this._url.includes('api.bilibili.com/x/v2/reply/wbi/main')) {
                             log(`✅ 捕获’评论‘请求...`);
@@ -4059,6 +4384,7 @@ ${subtitles.join('\n')}
         } catch (e) {
             console.error(`安装XHR拦截器失败:`, e);
         }
+        window.isUltimateInterceptorInstalled = true;
     }
 
     async function fetchConfigFromGit() {
@@ -4107,11 +4433,11 @@ ${subtitles.join('\n')}
             const localConfig = await GM_getValue("localConfig", null);
             const backupTime = await GM_getValue("backupTime") || 0;
             const lastBackupPassed = Date.now() - backupTime;
-            const intervalDays = Math.max(Math.floor(backupIntervals ?? 3), 1);
+            const intervalDays = Math.max(Math.floor(scriptConfig.backupIntervals ?? 3), 1);
             const ONE_DAY_MS = 24 * 3600 * 1000;
 
             if (lastBackupPassed > intervalDays * ONE_DAY_MS) {
-                log(`每${backupIntervals}天备份一次GM存储`);
+                log(`每${scriptConfig.backupIntervals}天备份一次GM存储`);
                 await GM_setValue("backupTime", Date.now());
                 await exportAllDataAsJson();
             } else {
@@ -4120,7 +4446,7 @@ ${subtitles.join('\n')}
 
             let fetchSuccess = false;
             const lastUpdatePassed = Date.now() - (localConfig?.time || 0);
-            if (FORCE_GIT_CONFIG || lastUpdatePassed > ONE_DAY_MS) {
+            if (scriptConfig.FORCE_GIT_CONFIG || lastUpdatePassed > ONE_DAY_MS) {
                 const res = await getConfigWithFallback();
                 if (res) {
                     debuglog(`⚙️ 云端配置更新成功:`, res);
@@ -4137,7 +4463,7 @@ ${subtitles.join('\n')}
             }
 
             if (!fetchSuccess) {
-                log(`📁 使用本地/默认广告词配置`);
+                log(`使用本地/默认配置`);
                 if (localConfig && localConfig.time && localConfig.keywordStr) {
                     biliAdWordsConfig = localConfig;
                 } else {
@@ -4159,8 +4485,8 @@ ${subtitles.join('\n')}
     // =========== 智能数据迁移模块 (支持合并) ===========
     // =================================================
     async function migrateLocalStorageToGM() {
-        if (localStorage.getItem('bili_ls_migrated_v2')) return;
-        log(`📦 [${location.hostname}] 检测到未迁移数据，开始增量合并到数据库...`);
+        if (localStorage.getItem('biliadskip_migrated_v2')) return;
+        log(`📦 [${location.hostname}] 迁移旧版本数据，增量合并到数据库...`);
         let count = 0;
         let mergeCount = 0;
         const keysToRemove = [];
@@ -4210,7 +4536,7 @@ ${subtitles.join('\n')}
         }
 
         keysToRemove.forEach(key => localStorage.removeItem(key));
-        localStorage.setItem('bili_ls_migrated_v2', 'true');
+        localStorage.setItem('biliadskip_migrated_v2', 'true');
 
         if (count > 0 || mergeCount > 0) {
             log(`✅ [${location.hostname}] 迁移完成！新增: ${count} 条，合并/补全: ${mergeCount} 条。`);
@@ -4239,5 +4565,6 @@ ${subtitles.join('\n')}
     registerMenuUI("🤖管理AI配置", 'bili-ad-skipper-ai-config-popup', setupAiConfigUI);
     registerMenuUI("⌚管理时间戳", 'bili-ad-timestamp-editor', manualAdTimestamps);
     registerMenuUI("📋管理白名单", 'UpWhiteListContainer', monitorUpWhiteList);
+    registerMenuUI("⚙️脚本高级配置", 'ScriptSettingsContainer', openSettingsUI);
 
 })();
