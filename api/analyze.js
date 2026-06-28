@@ -139,24 +139,31 @@ ${subtitles.join('\n')}
   const aliyunKey = process.env.ALIYUN_API_KEY;
   if (aliyunKey) {
     console.log('检测到 ALIYUN，优先使用...');
-    const aliyunModel = ["glm-5.2","qwen3.7-plus,"qwen3.7-max-2026-06-08"];
     try {
+      // 从环境变量读取模型列表（逗号分隔）
+      const modelsEnv = process.env.ALIYUN_API_MODELS;
+      let modelList = [];
+      if (modelsEnv) {
+        modelList = modelsEnv.split(',').map(m => m.trim()).filter(m => m.length > 0);
+      }
+      // 随机选择一个模型
+      const randomIndex = Math.floor(Math.random() * modelList.length);
+      const selectedModel = modelList[randomIndex];
+  
       AI_CONFIG.apiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
       AI_CONFIG.apiKey = aliyunKey;
-      AI_CONFIG.model = aliyunModel[0];
-      AI_CONFIG.providerName = `Aliyun (${AI_CONFIG.model})`; // 更新提供商名称用于日志
-      console.log(`✅ 已加载阿里云第一个模型: ${AI_CONFIG.model}`);
+      AI_CONFIG.model = selectedModel;
+      AI_CONFIG.providerName = `Aliyun (${selectedModel})`;
+      console.log(`✅ 已随机选择阿里云模型: ${selectedModel}`);
     } catch (e) {
       console.error("❌ 解析ALIYUN环境变量失败!将回退到默认配置KIMI", e);
-      AI_CONFIG.apiUrl = null;
     }
   }
   
-  if (!AI_CONFIG.apiUrl) {
+  if (!AI_CONFIG.apiKey) {
       console.log('...回退到使用默认的KIMI 配置');
-      const kimiConfig = JSON.parse(process.env.KIMI);
-      AI_CONFIG.apiUrl = kimiConfig.apiUrl;
-      AI_CONFIG.apiKey = kimiConfig.apikey;
+      AI_CONFIG.apiUrl = "https://api.moonshot.cn/v1/chat/completions";
+      AI_CONFIG.apiKey = process.env.KIMI_API_KEY;
       AI_CONFIG.model = 'moonshot-v1-32k';
   }
   
@@ -178,7 +185,6 @@ ${subtitles.join('\n')}
   const resp = await fetch(AI_CONFIG.apiUrl, {
     method: 'POST',
     headers: {
-      //'apikey': AI_CONFIG.apiKey,
       'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
       'Content-Type': 'application/json'
     },
