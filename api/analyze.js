@@ -121,11 +121,10 @@ async function fetchAITimestamps(subtitlesText, commentText ='') {
 {"start":"00:05.0","end":"00:20.0","product":"XX氨基酸洁面","noAd":false}
 `
   const user_prompt = `
-以下是视频标题和评论文本：\n
-标题: ${title}\n
-评论: ${commentText}\n\n
-以下是字幕内容：\n
-${subtitles.join('\n')}
+视频置顶评论文本：\n
+${commentText}\n\n
+字幕内容：\n
+${subtitlesText}
 `;
 
   // --- 1. 核心修改：配置源的动态决策 ---
@@ -256,7 +255,10 @@ async function processRequest({bv, subtitles, user_id, up_id, ip, commentText}) 
   const subtitlesText = subtitles.join('\n');
   if (subtitlesText.length > MAX_SUBTITLES_LENGTH) {
       console.warn(`[安全警告] 来自IP [${ip}] 的请求因字幕过长 (${subtitlesText.length} > ${MAX_SUBTITLES_LENGTH}) 而被拒绝。BV: ${bv}`);
-      return new Response(JSON.stringify({ error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }), { status: 413, headers: corsHeaders }); // 413 Payload Too Large
+      return {
+          status: 413,
+          json: { error: `字幕内容过长，最大允许 ${MAX_SUBTITLES_LENGTH} 字符。免费公共服务，请勿滥用` }
+      };  
   }
 
   // 无论结果如何，都将AI返回的【原始JSON】，包装后直接返回给客户端
