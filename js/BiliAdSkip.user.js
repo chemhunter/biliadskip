@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name             BiliAdSkipLite
+// @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version       2.36-lite
+// @version      2.37-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -28,20 +28,25 @@
 (function() {
     'use strict';
 
-    // 调试开关
-    const CONFIG_DEFAULTS = {
-        SHOW_DEBUG_LOG: false,               // 调试用，输出debug日志
-        SHOW_DEBUG_TIMEGAP: false,       // 调试用，输出两条debug日志之间的间隔时间
-        FORCE_GIT_CONFIG: false,               // 调试用，强制每个页面重新从git镜像获取最新关键词
-        DOWNLOAD_SUBTITLE_FILE: false,  // 调试用，下载视频字幕文件到本地
-        FORCE_AI_ACTIVE: true,                   // 强制启用AI分析
+    // 脚本配置定义 (统一管理，按需开启)
+    const CONFIG_SCHEMA = {
+        SHOW_DEBUG_LOG:         { default: false, label: '输出调试日志', type: 'checkbox' },
+        SHOW_DEBUG_TIMEGAP:     { default: false, label: '显示日志时间间隔', type: 'checkbox' },
+        FORCE_GIT_CONFIG:       { default: false, label: '强制刷新云端配置', type: 'checkbox' },
+        DOWNLOAD_SUBTITLE_FILE: { default: false, label: '下载字幕文件 *.json', type: 'checkbox' },
+        FORCE_AI_ACTIVE:        { default: true,  label: '强制启用AI分析', type: 'checkbox' },
+        SHORT_VIDEO_DURATION:   { default: 150,   label: '短视频判定时长(s)', type: 'number' },
+        backupIntervals:        { default: 3,     label: '数据备份周期(天)', type: 'number' },
+        MIN_JUMP_INTERVAL:      { default: 5,     label: '最小跳转间隔(s)', type: 'number' },
+        ANALYZE_DNAMAKU:        { default: "",  label: '指定弹幕文本统计', type: 'text' },
+        // 以下为非UI配置项
+        TIME_GROUP_THRESHOLD:   { default: 10,    hidden: true }
+     };
 
-        SHORT_VIDEO_DURATION: 150,     // 短视频时长评判依据，单位/s
-        TIME_GROUP_THRESHOLD: 10,      // 弹幕时间戳合组误差范围，单位/s
-        MIN_JUMP_INTERVAL: 5,                // 跳转冷静期，防止频繁跳转，单位/s
-        backupIntervals: 3,                          // 备份脚本数据到本地的周期，默认3，最小1，单位/天
-        ANALYZE_DNAMAKU: null             // 统计特定文本弹幕的数量，一般用不到
-    };
+    // 自动从 SCHEMA 生成默认配置对象
+    const CONFIG_DEFAULTS = Object.fromEntries(
+        Object.entries(CONFIG_SCHEMA).map(([key, item]) => [key, item.default])
+    );
 
     // 从 GM 存储中加载配置，并与默认配置合并
     let scriptConfig = Object.assign({}, CONFIG_DEFAULTS, GM_getValue('scriptConfig', {}));
@@ -212,7 +217,7 @@
         let clusterKey = null;
         for (const existingTsKey in state.danmakuTimestampStore) {
             const existingTs = Number(existingTsKey);
-            if (Math.abs(ts - existingTs) <= CONFIG_DEFAULTS.TIME_GROUP_THRESHOLD) {
+            if (Math.abs(ts - existingTs) <= scriptConfig.TIME_GROUP_THRESHOLD) {
                 clusterKey = existingTs;
                 break;
             }
@@ -362,7 +367,7 @@
             const timeSinceLastJump = now - state.lastJumpTime;
 
             // 规则一：跳转抑制
-            if (timeSinceLastJump < CONFIG_DEFAULTS.MIN_JUMP_INTERVAL * 1000) {
+            if (timeSinceLastJump < scriptConfig.MIN_JUMP_INTERVAL * 1000) {
                 return;
             }
 
@@ -2859,16 +2864,9 @@ color: #333;
 
         draggableManager.makeDraggable(settingsContainer, title);
 
-        const configItems = [
-            { key: 'SHOW_DEBUG_LOG', label: '输出调试日志', type: 'checkbox' },
-            { key: 'SHOW_DEBUG_TIMEGAP', label: '显示日志时间间隔', type: 'checkbox' },
-            { key: 'FORCE_GIT_CONFIG', label: '强制刷新云端配置', type: 'checkbox' },
-            { key: 'FORCE_AI_ACTIVE', label: '强制启用AI分析', type: 'checkbox' },
-            { key: 'DOWNLOAD_SUBTITLE_FILE', label: '下载字幕文件', type: 'checkbox' },
-            { key: 'SHORT_VIDEO_DURATION', label: '短视频判定时长(s)', type: 'number' },
-            { key: 'backupIntervals', label: '数据备份周期(天)', type: 'number' },
-            { key: 'ANALYZE_DNAMAKU', label: '指定弹幕文本统计', type: 'text' }
-        ];
+        const configItems = Object.entries(CONFIG_SCHEMA)
+            .filter(([_, item]) => !item.hidden)
+            .map(([key, item]) => ({ key, label: item.label, type: item.type }));
 
         const form = document.createElement('div');
         form.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
