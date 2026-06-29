@@ -2,7 +2,7 @@
 // @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version      2.37-lite
+// @version      2.38-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -32,12 +32,16 @@
     const CONFIG_SCHEMA = {
         SHOW_DEBUG_LOG:         { default: false, label: '输出调试日志', type: 'checkbox' },
         SHOW_DEBUG_TIMEGAP:     { default: false, label: '显示日志时间间隔', type: 'checkbox' },
-        FORCE_GIT_CONFIG:       { default: false, label: '强制刷新云端配置', type: 'checkbox' },
+        FORCE_GIT_CONFIG:       { default: false, label: '强制刷新云端配置（用户无需开启）', type: 'checkbox' },
         DOWNLOAD_SUBTITLE_FILE: { default: false, label: '下载字幕文件 *.json', type: 'checkbox' },
-        FORCE_AI_ACTIVE:        { default: true,  label: '强制启用AI分析', type: 'checkbox' },
+        FORCE_AI_ACTIVE:        { default: true,  label: '强制启用AI分析（建议开启）', type: 'checkbox' },
         SHORT_VIDEO_DURATION:   { default: 150,   label: '短视频判定时长(s)', type: 'number' },
         backupIntervals:        { default: 3,     label: '数据备份周期(天)', type: 'number' },
-        MIN_JUMP_INTERVAL:      { default: 5,     label: '最小跳转间隔(s)', type: 'number' },
+        MIN_JUMP_INTERVAL:      { default: 5,     label: '跳转冷静期(s)', type: 'number' },
+        CLOUD_PLATFORM_SERVICE: { default: 'supabase', label: '云端公益AI平台（默认即可）', type: 'select', options: [
+            { value: 'supabase', text: 'supabase' },
+            { value: 'vercel', text: 'vercel' }
+        ]},
         ANALYZE_DNAMAKU:        { default: "",  label: '指定弹幕文本统计', type: 'text' },
         // 以下为非UI配置项
         TIME_GROUP_THRESHOLD:   { default: 10,    hidden: true }
@@ -51,8 +55,10 @@
     // 从 GM 存储中加载配置，并与默认配置合并
     let scriptConfig = Object.assign({}, CONFIG_DEFAULTS, GM_getValue('scriptConfig', {}));
 
-    // 公共AI平台 supabase || vercel
-    const cloudPlatformService = 'supabase';
+    function getCloudPlatformService() {
+        const platform = scriptConfig.CLOUD_PLATFORM_SERVICE || 'supabase';
+        return publicAiPlatform[platform] ? platform : 'supabase';
+    }
 
     // --- 跟hookFetch 有关的全局变量
     const gState = {
@@ -423,8 +429,7 @@
     }
 
 
-    /** 一个完全自包含的音频播放模块。
-                 * 负责管理音频上下文和缓冲区的生命周期。 */
+    /** 一个完全自包含的音频播放模块。负责管理音频上下文和缓冲区的生命周期。 */
     const playNoticeSound = (() => {
         let audioCtx = null;
         let audioBuffer = null;
@@ -613,7 +618,6 @@
             }
 
             // --- 1. 状态重置 ---
-            // 只有在【非强制】模式下，才检查URL是否变化
             if (state.currentBV && bvNumber !== state.currentBV) {
                 log(`⚠️ BV 变更... ${state.currentBV} -> ${bvNumber}`);
                 resetState();
@@ -695,23 +699,21 @@
                 const { bestRecord, duplicateCount } = cloudResponse;
                 state.cloudDuplicateCount = duplicateCount || 0;
 
-                if (bestRecord) {
+                if (bestRecord && bestRecord.NoAD) {
                     //云端返回无广告
-                    if (bestRecord.NoAD) {
-                        log(` 🟢%c noAd`, boldGreen);
-                        state.noAd = true;
-                        await markVideoAsNoAd(bvNumber, { reason: "cloud_record" });
+                    log(` 🟢%c noAd`, boldGreen);
+                    state.noAd = true;
+                    await markVideoAsNoAd(bvNumber, { reason: "cloud_record" });
+                    return;
+                } else if (bestRecord && bbestRecord.timestamp_range) {
+                    //云端返回有效时间戳
+                    log(` 🟢 %c${bestRecord.timestamp_range}, %c${bestRecord.source}`, boldGreen, boldOrange);
+                    const dataTimestamp = extractTimestampFromString(bestRecord.timestamp_range);
+                    if (dataTimestamp) {
+                        state.adTime = dataTimestamp;
+                        // 注意：从云端获取的数据，我们通常不希望它再次触发上传
+                        monitorTimestamp(bvNumber, dataTimestamp, bestRecord.source, { uploadCloud: false, saveTimestamp: true });
                         return;
-                    } else if (bestRecord.timestamp_range) {
-                        //云端返回有效时间戳
-                        log(` 🟢 %c${bestRecord.timestamp_range}, %c${bestRecord.source}`, boldGreen, boldOrange);
-                        const dataTimestamp = extractTimestampFromString(bestRecord.timestamp_range);
-                        if (dataTimestamp) {
-                            state.adTime = dataTimestamp;
-                            // 注意：从云端获取的数据，我们通常不希望它再次触发上传
-                            monitorTimestamp(bvNumber, dataTimestamp, bestRecord.source, { uploadCloud: false, saveTimestamp: true });
-                            return;
-                        }
                     }
                 }
             }
@@ -720,19 +722,19 @@
         // 2. 查本地缓存
         if (!state.adTime){
             const result = await getStoredAdTime(bvNumber);
-            if (result) {
-                if (result ==="noAd") {
-                    log(`❓查询缓存 --> noAd`);
-                    danmakuManager.stop();
-                    state.noAd = true;
-                    return;
-                }
+            if (result && result ==="noAd") {
+                log(`❓查询缓存 --> noAd`);
+                danmakuManager.stop();
+                state.noAd = true;
+                 return;
+            } else if (result && result.adTime){
                 log(`❓查询缓存 --> `, JSON.stringify(result.adTime));
                 state.adTime = result.adTime;
                 monitorTimestamp(bvNumber, result.adTime, result.source, {uploadCloud: false, saveTimestamp: false});
-                return;
+                 return;
+            } else {
+                log(`❓查询缓存 --> 无数据`)
             }
-            log(`❓查询缓存 --> 无数据`)
         }
 
         // 3. 启动弹幕监控
@@ -1470,7 +1472,7 @@
         if (!apiKey) {
             log('❌未配置AI，调用%c公共AI服务')
             //返回json || null
-            return await callPublicService({ platform: cloudPlatformService, bv: bvNumber, subtitles});
+            return await callPublicService({ platform: getCloudPlatformService(), bv: bvNumber, subtitles});
         }
 
         // 3. 构造请求
@@ -1557,6 +1559,7 @@ ${subtitles.join('\n')}
             fetchUrl = apiUrl;
             fetchOptions.headers.Authorization = `Bearer ${apiKey}`;
             fetchOptions.headers['Content-Type'] = 'application/json';
+            const isThinkingModel = aiModel.includes('qwen3.7-max');
             body = {
                 messages: [
                     { role: 'system', content: system_prompt },
@@ -1565,9 +1568,9 @@ ${subtitles.join('\n')}
                 model: aiModel,
                 temperature: 0.2,
                 response_format: { type: "json_object" },
-                enable_thinking: false,
-                thinking: { "type": "disabled" }, // glm-5.1
-                extra_body: {"thinking": {"type": "disabled"},"thinking_budget": 500},
+                enable_thinking: isThinkingModel,
+                thinking: { "type": isThinkingModel ? "enabled" : "disabled" },
+                extra_body: isThinkingModel ? {"thinking": {"type": "enabled"},"thinking_budget": 1000} : {"thinking": {"type": "disabled"},"thinking_budget": 500},
                 max_tokens: 200
             };
         }
@@ -1579,7 +1582,7 @@ ${subtitles.join('\n')}
             if (response.status === 401) {
                 console.warn(`❎错误 401，用户的API Key 无效，调用公共AI服务`);
                 //返回 json || null
-                return await callPublicService({ platform: cloudPlatformService, bv: bvNumber, subtitles});
+                return await callPublicService({ platform: getCloudPlatformService(), bv: bvNumber, subtitles});
             }
 
             if (!response.ok) {
@@ -2108,7 +2111,7 @@ ${subtitles.join('\n')}
                  "qwen3.7-max-2026-05-17","qwen3.7-max-preview","qwen3.7-max","qwen3.7-max-2026-05-20",            // --2026-08
                  "glm-5.1","qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-35b-a3b","qwen3.6-max-preview",        // --2026-07
                  "kimi-k2.6", "tongyi-xiaomi-analysis-flash","qwen-flash-character","tongyi-xiaomi-analysis-pro",
-                 "qwen3.5-plus-2026-04-20", "qwen3.6-27b","deepseek-v4-pro","deepseek-v4-flash",
+                 "qwen3.5-plus-2026-04-20", "qwen3.6-27b","deepseek-v4-pro","deepseek-v4-flash", "qwen3.6-plus",
              ]
             },
             { value: 'deepseek', text: '深度求索 DeepSeek - 建议', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
@@ -2125,7 +2128,7 @@ ${subtitles.join('\n')}
             { id: 'AiSelect', label: 'AI提供商：', type: 'select', options: aiOptions.map(o => ({ value: o.value, text: o.text })) },
             { id: 'ModelSelect', label: '模型选择：', type: 'select', options: [] },
             { id: 'ApiUrl', label: 'API URL：', type: 'input', placeholder: '请输入API URL' },
-            { id: 'ApiKey', label: 'API KEY：', type: 'input', placeholder: '请输入API Key' }
+            { id: 'ApiKey', label: 'API KEY：', type: 'password', placeholder: '请输入API Key' }
         ];
 
         // --- 3. 创建所有UI构建的辅助函数 ---
@@ -2146,7 +2149,7 @@ ${subtitles.join('\n')}
                 });
             } else {
                 inputElement = document.createElement('input');
-                inputElement.type = 'text';
+                inputElement.type = fieldConfig.type === 'password' ? 'password' : 'text';
                 inputElement.placeholder = fieldConfig.placeholder || '';
             }
             inputElement.id = fieldConfig.id;
@@ -2864,7 +2867,13 @@ color: #333;
 
         const configItems = Object.entries(CONFIG_SCHEMA)
             .filter(([_, item]) => !item.hidden)
-            .map(([key, item]) => ({ key, label: item.label, type: item.type }));
+            .map(([key, item]) => ({
+                key,
+                label: item.label,
+                type: item.type,
+                options: item.options || [],
+                defaultValue: item.default
+            }));
 
         const form = document.createElement('div');
         form.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
@@ -2894,6 +2903,18 @@ color: #333;
                 input.type = 'checkbox';
                 input.checked = scriptConfig[item.key];
                 input.style.cssText = 'width: 18px; height: 18px; cursor: pointer;';
+            } else if (item.type === 'select') {
+                input = document.createElement('select');
+                input.style.cssText = 'width: 168px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; background: #fff; cursor: pointer; transition: border-color 0.2s;';
+                item.options.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.text;
+                    input.appendChild(optionElement);
+                });
+                input.value = scriptConfig[item.key] ?? item.defaultValue;
+                input.onfocus = () => input.style.borderColor = '#00a1d6';
+                input.onblur = () => input.style.borderColor = '#ddd';
             } else {
                 input = document.createElement('input');
                 input.type = item.type;
@@ -2924,6 +2945,8 @@ color: #333;
                     scriptConfig[item.key] = input.checked;
                 } else if (item.type === 'number') {
                     scriptConfig[item.key] = parseFloat(input.value);
+                } else if (item.type === 'select') {
+                    scriptConfig[item.key] = input.value || item.defaultValue;
                 } else {
                     scriptConfig[item.key] = input.value || null;
                 }
