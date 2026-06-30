@@ -104,7 +104,7 @@ ${subtitlesText}
     apiUrl: null,
     apiKey: null,
     model: null,
-    providerName: 'Kimi'
+    provider: 'Kimi'
   }
   
   const aliyunKey = process.env.ALIYUN_API_KEY;
@@ -124,7 +124,7 @@ ${subtitlesText}
       AI_CONFIG.apiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
       AI_CONFIG.apiKey = aliyunKey;
       AI_CONFIG.model = selectedModel;
-      AI_CONFIG.providerName = `Aliyun (${selectedModel})`;
+      AI_CONFIG.provider = `Aliyun (${selectedModel})`;
       console.log(`✅ 随机选择模型: ${selectedModel}`);
     } catch (e) {
       console.error("❌ 解析ALIYUN环境变量失败!将回退到默认配置KIMI", e);
@@ -153,7 +153,7 @@ ${subtitlesText}
   };
 
   // 根据提供商添加特定参数
-  if (AI_CONFIG.providerName.includes('Aliyun') || (AI_CONFIG.apiUrl && AI_CONFIG.apiUrl.includes('dashscope.aliyuncs.com'))) {
+  if (AI_CONFIG.provider.includes('Aliyun') || (AI_CONFIG.apiUrl && AI_CONFIG.apiUrl.includes('dashscope.aliyuncs.com'))) {
     const isThinkingModel = AI_CONFIG.model.includes('qwen-max') || AI_CONFIG.model.includes('qwen-plus') || AI_CONFIG.model.includes('qwen3.7');
     if (isThinkingModel) {
       reqBody.thinking = {
@@ -183,7 +183,7 @@ ${subtitlesText}
       } catch (e) {
           errorBody = '无法读取响应体。';
       }
-      const errorMessage = `AI [${AI_CONFIG.providerName}] 请求失败! 
+      const errorMessage = `AI [${AI_CONFIG.provider}] 请求失败! 
           请求目标URL: ${AI_CONFIG.apiUrl}
           状态码 (Status Code): ${resp.status} ${resp.statusText}
           响应体 (Response Body): ${errorBody}
