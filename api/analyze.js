@@ -142,7 +142,6 @@ ${subtitlesText}
       throw new Error("AI配置无效：未能从任何来源获取到有效的apiUrl和apiKey。");
   }
 
-  const isThinkingModel = AI_CONFIG.model.includes('qwen3.7-max');
   const reqBody = {
     model: AI_CONFIG.model,
     messages: [
@@ -150,14 +149,22 @@ ${subtitlesText}
         { role: 'user', content: user_prompt },
     ],
     temperature: 0.2,
-    enable_thinking: isThinkingModel,
-    thinking: { "type": isThinkingModel ? "enabled" : "disabled" },
-    extra_body: {
-      "thinking": {"type": isThinkingModel ? "enabled": "disabled"},
-      "thinking_budget": 500
-    },
-    max_tokens: 200,
+    max_tokens: 256
   };
+
+  // 根据提供商添加特定参数
+  if (AI_CONFIG.providerName.includes('Aliyun') || (AI_CONFIG.apiUrl && AI_CONFIG.apiUrl.includes('dashscope.aliyuncs.com'))) {
+    const isThinkingModel = AI_CONFIG.model.includes('qwen-max') || AI_CONFIG.model.includes('qwen-plus') || AI_CONFIG.model.includes('qwen3.7');
+    if (isThinkingModel) {
+      reqBody.thinking = {
+        type: "enabled"
+      };
+    }
+    const isThinkingMustEnable = AI_CONFIG.model.includes('qwen3.7-max');
+    if (isThinkingMustEnable) {
+      reqBody.enable_thinking = true;
+    }
+  }
 
   const resp = await fetch(AI_CONFIG.apiUrl, {
     method: 'POST',
