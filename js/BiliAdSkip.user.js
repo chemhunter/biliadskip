@@ -2,7 +2,7 @@
 // @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version      2.38-lite
+// @version      2.39-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
