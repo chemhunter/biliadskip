@@ -211,6 +211,41 @@
             cssText += `${cssKey}: ${value}; `;
         }
         element.style.cssText = cssText;
+        if (element.style.position !== 'fixed' && element.style.position !== 'absolute') {
+            element.style.position = 'relative';
+        }
+    }
+
+    /**
+     * 为容器添加右上角的关闭按钮 (X)
+     * @param {HTMLElement} container 容器元素
+     */
+    function addCloseX(container) {
+        const xButton = document.createElement('div');
+        xButton.textContent = '×';
+        xButton.title = '关闭界面';
+        xButton.style.cssText = `
+            position: absolute;
+            top: 5px;
+            right: 12px;
+            cursor: pointer;
+            font-size: 28px;
+            color: #999;
+            line-height: 1;
+            transition: color 0.2s, transform 0.2s;
+            user-select: none;
+            z-index: 10001;
+        `;
+        xButton.onmouseover = () => {
+            xButton.style.color = '#ff4d4f';
+            xButton.style.transform = 'scale(1.1)';
+        };
+        xButton.onmouseout = () => {
+            xButton.style.color = '#999';
+            xButton.style.transform = 'scale(1)';
+        };
+        xButton.onclick = () => uiWindowManager.closeAll();
+        container.appendChild(xButton);
     }
 
     /**
@@ -705,7 +740,7 @@
                     state.noAd = true;
                     await markVideoAsNoAd(bvNumber, { reason: "cloud_record" });
                     return;
-                } else if (bestRecord && bbestRecord.timestamp_range) {
+                } else if (bestRecord && bestRecord.timestamp_range) {
                     //云端返回有效时间戳
                     log(` 🟢 %c${bestRecord.timestamp_range}, %c${bestRecord.source}`, boldGreen, boldOrange);
                     const dataTimestamp = extractTimestampFromString(bestRecord.timestamp_range);
@@ -2180,6 +2215,7 @@ ${subtitles.join('\n')}
         const configContainer = document.createElement('div');
         configContainer.id = CONFIG_POPUP_ID;
         applyPopupStyle(configContainer, { top: '50%' });
+        addCloseX(configContainer);
 
         const configTitle = document.createElement('h3');
         configTitle.textContent = '管理AI配置';
@@ -2215,9 +2251,7 @@ ${subtitles.join('\n')}
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = 'margin-top: 20px; display: flex; justify-content: center; gap: 10px;';
         const saveButton = createButton('保存配置');
-        const cancelButton = createButton('关闭界面');
         buttonContainer.appendChild(saveButton);
-        buttonContainer.appendChild(cancelButton);
         configContainer.appendChild(buttonContainer);
 
         // --- 5. 定义所有事件处理和逻辑函数 ---
@@ -2319,8 +2353,6 @@ ${subtitles.join('\n')}
 
         // --- 6. 最终的初始化和事件绑定 ---
         saveButton.onclick = saveLocalAIConfig;
-        //cancelButton.onclick = hideAIConfigUI;
-        cancelButton.onclick = () => uiWindowManager.closeAll();
 
         document.body.appendChild(configContainer);
         loadLocalAIConfig();
@@ -2347,6 +2379,7 @@ ${subtitles.join('\n')}
         container = document.createElement('div');
         container.id = containerId;
         applyPopupStyle(container);
+        addCloseX(container);
 
         const title = document.createElement('h3');
         title.textContent = `手动配置广告时间戳`;
@@ -2625,11 +2658,6 @@ color: #333;
         });
         buttonContainer.appendChild(saveTimestampButton);
 
-        // 关闭按钮
-        const cancelButton = createButton('关闭界面', () => {
-            uiWindowManager.closeAll();
-        });
-        buttonContainer.appendChild(cancelButton);
         container.appendChild(buttonContainer);
         document.body.appendChild(container);
 
@@ -2741,6 +2769,7 @@ color: #333;
         const UpWhiteListContainer = document.createElement('div');
         UpWhiteListContainer.id = 'UpWhiteListContainer';
         applyPopupStyle(UpWhiteListContainer);
+        addCloseX(UpWhiteListContainer);
 
         const Title = document.createElement('h3');
         Title.textContent = `手动管理白名单（跳过检测）`;
@@ -2821,15 +2850,8 @@ color: #333;
         toggleCurrentUpButton.id = 'bili-add-current-up-btn';
         toggleCurrentUpButton.style.cssText = `color: white; padding: 4px 5px; margin: 0 5px; border: none; border-radius: 4px;`;
 
-        // 创建“完成”按钮
-        const finishButton = createButton('关闭界面', () => {
-            //document.body.removeChild(UpWhiteListContainer);
-            uiWindowManager.closeAll();
-        })
-
         //插入元素
         buttonContainer.appendChild(toggleCurrentUpButton);
-        buttonContainer.appendChild(finishButton);
         UpWhiteListContainer.appendChild(buttonContainer);
         document.body.appendChild(UpWhiteListContainer);
 
@@ -2857,6 +2879,7 @@ color: #333;
         const settingsContainer = document.createElement('div');
         settingsContainer.id = containerId;
         applyPopupStyle(settingsContainer, { width: '450px', padding: '25px', top: '50%' });
+        addCloseX(settingsContainer);
 
         const title = document.createElement('h3');
         title.textContent = '脚本高级配置';
@@ -2931,7 +2954,7 @@ color: #333;
         settingsContainer.appendChild(form);
 
         const btnContainer = document.createElement('div');
-        btnContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px;';
+        btnContainer.style.cssText = 'display: flex; justify-content: center; gap: 10px; margin-top: 25px;';
 
         const saveBtn = document.createElement('button');
         saveBtn.textContent = '保存并应用';
@@ -2956,12 +2979,6 @@ color: #333;
             uiWindowManager.closeAll();
         };
 
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = '取消';
-        cancelBtn.style.cssText = 'padding: 8px 16px; background: #f5f5f5; color: #666; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-weight: 500;';
-        cancelBtn.onclick = () => uiWindowManager.closeAll();
-
-        btnContainer.appendChild(cancelBtn);
         btnContainer.appendChild(saveBtn);
         settingsContainer.appendChild(btnContainer);
 
