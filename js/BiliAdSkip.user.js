@@ -2,7 +2,7 @@
 // @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version      2.39-lite
+// @version      2.40-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -35,6 +35,7 @@
         FORCE_GIT_CONFIG:       { default: false, label: '强制刷新云端配置（用户无需开启）', type: 'checkbox' },
         DOWNLOAD_SUBTITLE_FILE: { default: false, label: '下载字幕文件 *.json', type: 'checkbox' },
         FORCE_AI_ACTIVE:        { default: true,  label: '强制启用AI分析（建议开启）', type: 'checkbox' },
+        ENABLE_SORT_AND_SAVE:   { default: false, label: '本地存档弹幕localStorage（用户无需开启）', type: 'checkbox' },
         SHORT_VIDEO_DURATION:   { default: 150,   label: '短视频判定时长(s)', type: 'number' },
         backupIntervals:        { default: 3,     label: '数据备份周期(天)', type: 'number' },
         MIN_JUMP_INTERVAL:      { default: 5,     label: '跳转冷静期(s)', type: 'number' },
@@ -876,8 +877,11 @@
                     return `${obj.time} ${obj.content}`;
                 });
 
+                // 字符数检查和裁剪
+                const { trimmedSubtitles } = trimSubtitlesArray(formattedSlice, 6000);
+
                 return {
-                    filteredSubtitles: formattedSlice,
+                    filteredSubtitles: trimmedSubtitles,
                 };
             } else if (hasAd === false) {
                 // 【评论区无广告，字幕也无关键词】 -> 极大概率无广告
@@ -963,7 +967,7 @@
         debuglog(`❓广告区域 ${formatTime(start)}-${formatTime(end)}，扩展 ${formatTime(startExt)}-${formatTime(endExt)}`);
 
         // 5. 提取疑似广告部分字幕
-        const filteredSubtitles = subtitleObjects
+        let filteredSubtitles = subtitleObjects
         .filter(obj => {
             const s = obj.fromSec !== undefined ? obj.fromSec : timeToSeconds(obj.time);
             const e = obj.toSec !== undefined ? obj.toSec : s;
@@ -976,7 +980,10 @@
             return `${obj.time} ${obj.content}`;
         });
 
-        return { filteredSubtitles };
+        // 6. 字符数检查和裁剪
+        const { trimmedSubtitles } = trimSubtitlesArray(filteredSubtitles, 6000);
+
+        return { filteredSubtitles: trimmedSubtitles };
     }
 
 
@@ -997,6 +1004,29 @@
                 return { fromStr, toStr: fromStr, fromSec, toSec: fromSec, content };
             }
         });
+    }
+
+    /** (新增) 裁剪字幕数组，确保总字符数不超过最大限制 */
+    function trimSubtitlesArray(subtitlesArray, maxChars = 6000) {
+        let currentSubtitles = [...subtitlesArray];
+        let totalChars = currentSubtitles.join('\n').length;
+        debuglog(`📏 初始字幕字符数: ${totalChars}, 最大限制: ${maxChars}`);
+        // 如果字符数已经在限制内，直接返回
+        if (totalChars <= maxChars) {
+            return { trimmedSubtitles: currentSubtitles, wasTrimmed: false };
+        }
+         // 逐步从两端各减去一条字幕，直到字符数在限制内
+        while (totalChars > maxChars && currentSubtitles.length > 0) {
+            if (currentSubtitles.length === 1) {
+                currentSubtitles = [];
+                break;
+            }
+            // 从两端各移除一条
+            currentSubtitles = currentSubtitles.slice(1, -1);
+            totalChars = currentSubtitles.join('\n').length;
+        }
+        log(`✂️ 裁剪字幕: ${subtitlesArray.length} 条 → ${currentSubtitles.length} 条, 总字符数: ${totalChars}`);
+        return { trimmedSubtitles: currentSubtitles, wasTrimmed: true };
     }
 
 
@@ -2140,21 +2170,17 @@ ${subtitles.join('\n')}
         // --- 2. 定义所有数据源和配置 ---
         const aiOptions = [
             {value: 'aliyun', text: '阿里云（平台）- 建议', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-             model: [
-                 //此处列出的是阿里云百炼平台上新出的模型，限时3个月免费，每个模型100万token额度，一直白嫖试用最新模型，足够用了
-                 "glm-5.2","qwen3.7-max-2026-06-08","qwen3.7-plus","qwen3.7-plus-2026-05-26",                                    // --体验有效期至 2026-09
-                 "qwen3.7-max-2026-05-17","qwen3.7-max-preview","qwen3.7-max","qwen3.7-max-2026-05-20",            // --2026-08
-                 "glm-5.1","qwen3.6-flash-2026-04-16","qwen3.6-flash","qwen3.6-35b-a3b","qwen3.6-max-preview",        // --2026-07
-                 "kimi-k2.6", "tongyi-xiaomi-analysis-flash","qwen-flash-character","tongyi-xiaomi-analysis-pro",
-                 "qwen3.5-plus-2026-04-20", "qwen3.6-27b","deepseek-v4-pro","deepseek-v4-flash", "qwen3.6-plus",
-             ]
+             model: `glm-5.2, qwen3.7-max-2026-06-08, qwen3.7-plus, qwen3.7-plus-2026-05-26, qwen3.7-max-2026-05-17, qwen3.7-max-preview,
+                 qwen3.7-max, qwen3.7-max-2026-05-20, deepseek-v4-pro, deepseek-v4-flash, glm-5.1, qwen3.6-flash-2026-04-16, qwen3.6-flash,
+                 qwen3.6-35b-a3b, qwen3.6-max-preview, kimi-k2.6, tongyi-xiaomi-analysis-flash, qwen-flash-character, tongyi-xiaomi-analysis-pro,
+                 qwen3.5-plus-2026-04-20, qwen3.6-27b`
             },
-            { value: 'deepseek', text: '深度求索 DeepSeek - 建议', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
-            {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: ['kimi-k2.6', 'kimi-k2.5', 'moonshot-v1-32k', 'moonshot-v1-8k' ] },
-            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: ['glm-5.2', 'glm-5.1', ' glm-5', 'glm-4.7', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'] },
-            {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: ['deepseek-ai/DeepSeek-V4-Flash','MiniMaxAI/MiniMax-M2.5'] },
-            // {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: ['ernie-4.5-turbo-latest', 'qwen3-30b-a3b-instruct-2507','qwen3-14b'] },
-            {value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-5.1-nano', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4o-mini', 'gpt-4o' ]},
+            { value: 'deepseek', text: '深度求索 DeepSeek - 建议', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-v4-flash, deepseek-v4-pro' },
+            {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: 'kimi-k2.6, kimi-k2.5, moonshot-v1-32k, moonshot-v1-8k' },
+            {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-5.2, glm-5.1, glm-5, glm-4.7, glm-4.7-flash, glm-4.6, glm-4.5-air' },
+            {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: 'ernie-4.5-turbo, qwen3-30b-a3b-instruct-2507,qwen3-14b'},
+            {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: 'deepseek-ai/DeepSeek-V4-Flash, MiniMaxAI/MiniMax-M2.5' },
+            {value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5.1, gpt-5.1-mini, gpt-5.1-nano, gpt-5, gpt-5-mini, gpt-5-nano, gpt-4o-mini, gpt-4o' },
             { value: 'custom1', text: '自定义AI-1', apiUrl: '', model: '' },
             { value: 'custom2', text: '自定义AI-2', apiUrl: '', model: '' }
         ];
@@ -2273,9 +2299,13 @@ ${subtitles.join('\n')}
                 ModelSelect.style.display = '';
                 modelInput.style.display = 'none';
                 ModelSelect.innerHTML = '';
-                if (selectedOptionData && Array.isArray(selectedOptionData.model) && selectedOptionData.model.length > 0) {
+
+                const modelData = selectedOptionData?.model || '';
+                const models = Array.isArray(modelData) ? modelData : (modelData ? modelData.split(',').map(m => m.trim()).filter(m => m) : []);
+
+                if (models.length > 0) {
                     ModelSelect.disabled = false;
-                    selectedOptionData.model.forEach(modelName => {
+                    models.forEach(modelName => {
                         const option = document.createElement('option');
                         option.value = modelName;
                         option.textContent = modelName;
@@ -3847,9 +3877,65 @@ color: #333;
     }
 
 
+    /** (临时功能) 将弹幕按照视频进度 progress 排序 */
+    function sortDanmakusByProgress(danmakus) {
+        if (!Array.isArray(danmakus)) return danmakus;
+        return [...danmakus].sort((a, b) => (a.progress || 0) - (b.progress || 0));
+    }
+
+    /** (临时功能) 合并弹幕数据并保存到 localStorage，按 BV 号建档 */
+    function mergeAndSaveDanmakus(newDanmakus, bv) {
+        if (!bv || !Array.isArray(newDanmakus)) return;
+
+        const storageKey = `bili_danmaku_${bv}`;
+        try {
+            // 1. 获取已有数据
+            const existingData = localStorage.getItem(storageKey);
+            let mergedList = existingData ? JSON.parse(existingData) : [];
+
+            // 2. 合并并去重 (使用 idStr 作为唯一标识)
+            const seenIds = new Set(mergedList.map(dm => dm.idStr));
+            for (const dm of newDanmakus) {
+                if (!seenIds.has(dm.idStr)) {
+                    // 仅保留最关键的四项信息，节省空间
+                    mergedList.push({
+                        idStr: dm.idStr,
+                        progress: dm.progress,
+                        content: dm.content,
+                        ctime: dm.ctime
+                    });
+                    seenIds.add(dm.idStr);
+                }
+            }
+
+            // 3. 重新按 progress 排序
+            mergedList = sortDanmakusByProgress(mergedList);
+
+            // 4. 保存回 localStorage
+            localStorage.setItem(storageKey, JSON.stringify(mergedList));
+            debuglog(`💾 已同步弹幕到 localStorage [${bv}]: 当前总计 ${mergedList.length} 条`);
+        } catch (e) {
+            console.error(`❌ [${bv}] 弹幕存档失败:`, e);
+        }
+    }
+
     /** (最终版) 处理解码后的弹幕数组，并将其送入弹幕分析引擎。*/
     function processDecodedDanmakus(danmakus) {
         if (!danmakus || danmakus.length === 0) return;
+
+        if (scriptConfig.ENABLE_SORT_AND_SAVE) {
+            const currentBV = state.currentBV || window.location.pathname.split('/')[2];
+            if (currentBV && currentBV.startsWith('BV')) {
+                mergeAndSaveDanmakus(danmakus, currentBV);
+                try {
+                    const savedData = localStorage.getItem(`bili_danmaku_${currentBV}`);
+                    if (savedData) danmakus = JSON.parse(savedData);
+                } catch(e) {}
+            } else {
+                danmakus = sortDanmakusByProgress(danmakus);
+            }
+        }
+
         debuglog(`🔓弹幕数: ${danmakus.length}`);
         let exactCount = 0;
         let containsCount = 0;
