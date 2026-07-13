@@ -2,7 +2,7 @@
 // @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version      2.41-lite
+// @version      2.42-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -18,12 +18,12 @@
 // @grant        GM_download
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
+// @run-at       document-start
 // @icon       https://i2.hdslb.com/bfs/emote/3087d273a78ccaff4bb1e9972e2ba2a7583c9f11.png
 // @require      https://cdn.jsdelivr.net/npm/protobufjs@7.3.0/dist/protobuf.min.js
 // @require      https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
 // @downloadURL https://update.greasyfork.org/scripts/542541/biliadskiplite.user.js
 // @updateURL https://update.greasyfork.org/scripts/542541/biliadskiplite.meta.js
-// @run-at       document-start
 // @noframes
 
 // ==/UserScript==
@@ -338,58 +338,51 @@
         }
     }
 
-    // 上传共享数据到云端数据库 Supabase（带超时+重试）
+    // 上传共享数据到云端数据库 Supabase（带超时，去除重试）
     async function uploadAdTimeDataToCloud(bv, timestamp_range, source, NoAD = null) {
-        const MAX_RETRIES = 2; // 额外重试次数
+        //const MAX_RETRIES = 2; // 额外重试次数
         const TIMEOUT_MS = 10000; // 超时时间（毫秒）
         let lastError = null;
 
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskipShare";
-                const upInfo = await getUpInfo();
-                const dataBody = {
-                    bv,
-                    timestamp_range: NoAD ? null : timestamp_range,
-                    source,
-                    user_id: getOrCreateUserId(),
-                    up_id: state.upName || upInfo?.name || 'unknown',
-                    NoAD
-                };
+		try {
+			const url = "https://akoaopeqigjwpcksqdyf.supabase.co/functions/v1/biliadskipShare";
+			const upInfo = await getUpInfo();
+			const dataBody = {
+				bv,
+				timestamp_range: NoAD ? null : timestamp_range,
+				source,
+				user_id: getOrCreateUserId(),
+				up_id: state.upName || upInfo?.name || 'unknown',
+				NoAD
+			};
 
-                // 使用带超时的 fetch
-                const Resp = await fetchWithTimeout(url, {
-                    method: "POST",
-                    headers: {
-                        'Authorization': `Bearer ${supabaseAnonKey.join('.')}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(dataBody)
-                }, TIMEOUT_MS);
+			// 使用带超时的 fetch
+			const Resp = await fetchWithTimeout(url, {
+				method: "POST",
+				headers: {
+					'Authorization': `Bearer ${supabaseAnonKey.join('.')}`,
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify(dataBody)
+			}, TIMEOUT_MS);
 
-                if (!Resp.ok) {
-                    const errorText = await Resp.text();
-                    throw new Error(`HTTP ${Resp.status}: ${errorText}`);
-                }
+			if (!Resp.ok) {
+				const errorText = await Resp.text();
+				throw new Error(`HTTP ${Resp.status}: ${errorText}`);
+			}
 
-                log(`🆗已共享: ${timestamp_range || (NoAD && 'noAd')}`);
-                const biliadskipJson = await Resp.json();
-                return { success: true, biliadskip_result: biliadskipJson };
+			log(`🆗已共享: ${timestamp_range || (NoAD && 'noAd')}`);
+			const biliadskipJson = await Resp.json();
+			return { success: true, biliadskip_result: biliadskipJson };
 
-            } catch (err) {
-                lastError = err;
-                const isTimeout = err.name === 'AbortError';
-                const errorMsg = isTimeout ? `请求超时 (${TIMEOUT_MS/1000}s)` : err.message;
+		} catch (err) {
+			lastError = err;
+			const isTimeout = err.name === 'AbortError';
+			const errorMsg = isTimeout ? `请求超时 (${TIMEOUT_MS/1000}s)` : err.message;
+			console.error(`❌ 调用上传接口失败:`, errorMsg);
+		}
 
-                if (attempt < MAX_RETRIES) {
-                    console.warn(`⏳ 上传失败 (${errorMsg})，${MAX_RETRIES - attempt} 次重试剩余，重试...`);
-                } else {
-                    console.error(`❌ 调用上传接口失败（已重试 ${MAX_RETRIES} 次）:`, errorMsg);
-                }
-            }
-        }
-
-        // 所有重试均失败，返回失败结果
+        // 上传失败，返回结果
         return {
             success: false,
             error: lastError?.message || lastError || '未知错误'
@@ -2173,14 +2166,13 @@ ${subtitles.join('\n')}
         const aiOptions = [
             {value: 'aliyun', text: '阿里云（平台）- 建议', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
              model: `glm-5.2, qwen3.7-max-2026-06-08, qwen3.7-plus, qwen3.7-plus-2026-05-26, qwen3.7-max-2026-05-17, qwen3.7-max-preview,
-                 qwen3.7-max, qwen3.7-max-2026-05-20, deepseek-v4-pro, deepseek-v4-flash, glm-5.1, qwen3.6-flash-2026-04-16, qwen3.6-flash,
-                 qwen3.6-35b-a3b, qwen3.6-max-preview, kimi-k2.6, tongyi-xiaomi-analysis-flash, qwen-flash-character, tongyi-xiaomi-analysis-pro,
-                 qwen3.5-plus-2026-04-20, qwen3.6-27b`
+                 qwen3.7-max, qwen3.7-max-2026-05-20, deepseek-v4-pro, deepseek-v4-flash, qwen3.6-27b, glm-5.1, qwen3.6-max-preview, kimi-k2.6,
+                 tongyi-xiaomi-analysis-flash, tongyi-xiaomi-analysis-pro, qwen-flash-character, qwen3.6-flash, qwen3.6-35b-a3b, qwen3.5-plus-2026-04-20`
             },
             { value: 'deepseek', text: '深度求索 DeepSeek - 建议', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-v4-flash, deepseek-v4-pro' },
             {value: 'kimi', text: '月之暗面 Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: 'kimi-k2.6, kimi-k2.5, moonshot-v1-32k, moonshot-v1-8k' },
             {value: 'glm', text: '智谱清言 GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-5.2, glm-5.1, glm-5, glm-4.7, glm-4.7-flash, glm-4.6, glm-4.5-air' },
-            {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: 'ernie-4.5-turbo, qwen3-30b-a3b-instruct-2507,qwen3-14b'},
+            {value: 'baidu', text: '百度千帆（平台）', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: 'ernie-5.1, ernie-4.5-turbo-32k, ernie-x1.1, deepseek-v4-flash, qwen3.5-397b-a17b, qwen3.5-122b-a10b, qwen3.5-27b'},
             {value: 'siliconflow', text: '硅基流动（平台）', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: 'deepseek-ai/DeepSeek-V4-Flash, MiniMaxAI/MiniMax-M2.5' },
             {value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5.1, gpt-5.1-mini, gpt-5.1-nano, gpt-5, gpt-5-mini, gpt-5-nano, gpt-4o-mini, gpt-4o' },
             { value: 'custom1', text: '自定义AI-1', apiUrl: '', model: '' },
