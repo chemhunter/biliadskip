@@ -2,7 +2,7 @@
 // @name         BiliAdSkipLite
 // @namespace    BiliAdSkip
 // @description  通过分析置顶评论、字幕、弹幕，获取视频广告时间戳，自动跳过广告（轻量版）
-// @version      2.40-lite
+// @version      2.41-lite
 // @author       BiliAdSkip
 // @match        https://www.bilibili.com/*
 // @match        https://space.bilibili.com/*
@@ -18,10 +18,12 @@
 // @grant        GM_download
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
-// @run-at       document-start
 // @icon       https://i2.hdslb.com/bfs/emote/3087d273a78ccaff4bb1e9972e2ba2a7583c9f11.png
 // @require      https://cdn.jsdelivr.net/npm/protobufjs@7.3.0/dist/protobuf.min.js
 // @require      https://cdn.jsdelivr.net/npm/blueimp-md5@2.19.0/js/md5.min.js
+// @downloadURL https://update.greasyfork.org/scripts/542541/biliadskiplite.user.js
+// @updateURL https://update.greasyfork.org/scripts/542541/biliadskiplite.meta.js
+// @run-at       document-start
 // @noframes
 
 // ==/UserScript==
