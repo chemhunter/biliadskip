@@ -21,6 +21,7 @@ bilibili.com##.f-left.h-100.shortcuts-ctnr
 bilibili.com##.download-client-trigger.download-entry
 bilibili.com##.right-entry--vip.right-entry__outside
 bilibili.com##.bili-dyn-version-control__reminding
+bilibili.com##.upload-creative-entry-list
 
 www.bilibili.com##.inside-wrp
 www.bilibili.com##.fixed-card
