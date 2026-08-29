@@ -34,6 +34,7 @@ www.bilibili.com##.channel-items__right
 www.bilibili.com##.video-card-ad-small
 www.bilibili.com##.video-page-special-card-small > .card-box
 www.bilibili.com##.video-page-game-card-small
+www.bilibili.com##.video-resource-list
 
 live.bilibili.com##.border-box.convention-msg.chat-item
 live.bilibili.com##.shop-popover
