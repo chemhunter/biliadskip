@@ -14,7 +14,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
-// @icon         https://i0.hdslb.com/bfs/emote/bf7e00ecab02171f8461ee8cf439c73db9797748.png
+// @icon         https://i0.hdslb.com/bfs/emote/71dfc073d05c1672031ad2b8c8404d4b97ae66aa.png
 // @run-at       document-end
 // ==/UserScript==
 
