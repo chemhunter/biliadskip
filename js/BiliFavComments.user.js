@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BiliFavComments（B站评论收藏&备份）
 // @namespace    https://github.com/chemhunter/biliadskip/raw/main/js/BiliFavComments.user.js
-// @description  B站评论收藏：评论区菜单收藏/取消收藏、本地管理面板（搜索/导出/删除）、图片本地缓存、云端同步
-// @version      0.13
+// @description  B站评论收藏：动作栏星星按钮收藏与取消、本地管理面板（搜索/导出/删除）、图片本地缓存、云端同步
+// @version      0.24
 // @author       chmehunter
 // @match        https://www.bilibili.com/video/*
 // @match        https://www.bilibili.com/opus/*
@@ -14,7 +14,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
-// @icon         https://i0.hdslb.com/bfs/emote/71dfc073d05c1672031ad2b8c8404d4b97ae66aa.png
+// @icon         https://i0.hdslb.com/bfs/emote/bf7e00ecab02171f8461ee8cf439c73db9797748.png
 // @run-at       document-end
 // ==/UserScript==
 
@@ -43,7 +43,14 @@
 		'6JW6Gtescu5btG25b3en9w84ZbO40Z4fy3iUfWROIOM',
 	].join('.');
 	const FAV_AUTH_KEY = 'bili_fav_auth';
+	const FAV_AUTH_RENEW_KEY = 'bili_fav_auth_last_renew';   // 上次成功续期（或刚拿到授权）的时刻，epoch 毫秒
 	let favAuthCache = null;
+
+	// 续期策略：**只在真要调云端、且 access_token 确实快过期时**才轮换（见 ensureFavAuthToken），
+	// 不做定时器/固定周期续期。原因：脚本手里这枚 refresh_token 是发布页原样转交的，两边同属一族会话。
+	// Supabase 默认开着 Refresh Token Rotation（一次性令牌），而托管版的 Reuse Interval 上限只有 300 秒，
+	// 盖不住 access_token 约 1 小时的续期间隔；谁先轮换，另一边的旧令牌就作废，再拿旧的去做自动续期会被
+	// 判为重用并吊销整族会话 —— 结果是发布页掉登录、脚本这份新令牌也一起死。所以轮换次数必须尽量少。
 
 	// 授权读取/保存：GM 存储 {access_token, refresh_token, expires_at(ms)}
 	async function getFavAuth() {
@@ -70,14 +77,14 @@
 			expires_at: d.expires_at || (Date.now() + 3600 * 1000),
 		};
 		await saveFavAuth(auth);
+		await GM_setValue(FAV_AUTH_RENEW_KEY, Date.now());   // 刚拿到的授权记为「上次续期」时刻，供状态栏显示
 		return auth;
 	}
 
-	// 取未过期的 access_token：过期前 60s 用 refresh_token 续期（Supabase 会轮换 refresh_token）
-	async function ensureFavAuthToken() {
+	// 用 refresh_token 换一对新令牌。注意 Supabase 会轮换：旧 refresh_token 当场作废
+	async function renewFavAuth() {
 		const auth = await getFavAuth();
-		if (!auth) return null;
-		if (auth.access_token && auth.expires_at && auth.expires_at - 60000 > Date.now()) return auth.access_token;
+		if (!auth || !auth.refresh_token) return null;
 		try {
 			const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
 				method: 'POST',
@@ -91,15 +98,25 @@
 					refresh_token: j.refresh_token,
 					expires_at: Date.now() + (j.expires_in || 3600) * 1000,
 				});
-				log('🔑 授权已自动续期');
+				await GM_setValue(FAV_AUTH_RENEW_KEY, Date.now());
+				log('🔑 授权已自动续期，有效期至 ' + new Date(favAuthCache.expires_at).toLocaleString());
 				return favAuthCache.access_token;
 			}
-			log('⚠️ 授权续期失败（可能已在发布页登出），请重新授权:', j);
+			log('⚠️ 授权续期失败（可能已在发布页登出，或发布页刚用过同一枚 refresh_token），请重新授权:', j);
 			await saveFavAuth(null);   // 失效令牌清掉，避免每次同步都白跑
 		} catch (e) {
-			log('🔑 授权续期请求失败:', e);
+			log('🔑 授权续期请求失败:', e);   // 网络类失败不清令牌，下次接着试
 		}
 		return null;
+	}
+
+	// 取未过期的 access_token：过期前 60s 用 refresh_token 续期（Supabase 会轮换 refresh_token）
+	async function ensureFavAuthToken() {
+		// 按需续期：这是唯一的续期入口，只在真要调云端前被调用
+		const auth = await getFavAuth();
+		if (!auth) return null;
+		if (auth.access_token && auth.expires_at && auth.expires_at - 60000 > Date.now()) return auth.access_token;
+		return renewFavAuth();
 	}
 
 	// 接收发布页授权弹窗的 postMessage（来源必须为本域，令牌仅在用户主动点发送时发出）
@@ -238,21 +255,20 @@
 		};
 	})();
 
-	// 深度查询选择器（支持多层shadow-root）
+	// 深度查询选择器（支持多层 shadow-root）
+	// 注意：自定义组件（如 bili-comment-box / bili-comment-renderer）把内容渲染在**宿主元素自己的
+	// shadowRoot** 里，传元素时必须连它自身的影子树一起扫，否则什么都找不到。
 	function querySelectorAllDeep(root, selector) {
 		const results = [];
 		if (!root) return results;
-		try {
-			results.push(...root.querySelectorAll(selector));
-		} catch (e) {}
-
-		// 查找所有shadow root
-		const allElements = root.querySelectorAll('*');
-		for (const el of allElements) {
-			if (el.shadowRoot) {
-				results.push(...querySelectorAllDeep(el.shadowRoot, selector));
+		const scan = (scope) => {
+			try { results.push(...scope.querySelectorAll(selector)); } catch (e) { /* 选择器非法等，忽略 */ }
+			for (const el of scope.querySelectorAll('*')) {
+				if (el.shadowRoot) scan(el.shadowRoot);
 			}
-		}
+		};
+		if (root.nodeType === 1 && root.shadowRoot) scan(root.shadowRoot);
+		scan(root);
 		return results;
 	}
 
@@ -306,22 +322,16 @@
 		return favSetCache;
 	}
 
-	// 把某个"收藏"项标记为已收藏态（灰显 + 文案）
-	function markFaved(li) {
-		if (!li) return;
-		li.textContent = '⭐已收藏';
-		li.dataset.favDone = '1';
-		li.style.color = '#999';
-		li.style.cursor = 'default';
+	// 把动作栏的星星按钮标成已收藏态（只改填充色，不能动 textContent）
+	function markFaved(btn) {
+		if (!btn) return;
+		paintFavBtn(btn, true);
 	}
 
-	// 恢复为可点击的"收藏"态（取消收藏时用）
-	function unmarkFaved(li) {
-		if (!li) return;
-		li.textContent = '收藏';
-		li.dataset.favDone = '';
-		li.style.color = '';
-		li.style.cursor = 'pointer';
+	// 恢复为未收藏态（取消收藏时用）
+	function unmarkFaved(btn) {
+		if (!btn) return;
+		paintFavBtn(btn, false);
 	}
 
 	// 以 rpid_str 为主键去重保存，返回 true 表示新增、false 表示更新
@@ -350,14 +360,6 @@
 		}
 		parent.children.push(child);
 		return true;
-	}
-
-	async function saveFavorite(entry) {
-		const list = await getFavorites();
-		const r = upsertTopEntry(list, entry);
-		await GM_setValue(FAV_KEY, list);
-		if (favSetCache && entry.rpid_str) favSetCache.add(entry.rpid_str);
-		return r.isNew;
 	}
 
 	// 跨 shadow 边界向上爬到指定标签的宿主元素
@@ -922,67 +924,133 @@
 		return { ok: true, isNew, entry, topRef, isSub: isSubResult };
 	}
 
-	async function doFavorite(menuEl, liEl) {
-		const renderer = climbToTag(menuEl, 'BILI-COMMENT-ACTION-BUTTONS-RENDERER')
-			|| climbToTag(menuEl, 'BILI-COMMENT-RENDERER');
+	async function doFavorite(abr, btn) {
+		const renderer = climbToTag(abr, 'BILI-COMMENT-ACTION-BUTTONS-RENDERER')
+			|| climbToTag(abr, 'BILI-COMMENT-RENDERER');
 		const res = await collectAndSaveFavorite(renderer);
 		if (!res.ok) { showFavToast('⚠️ 未取到评论数据'); return; }
-		markFaved(liEl);
+		markFaved(btn);
 		const hasPics = res.entry.pictures && res.entry.pictures.length;
 		if (res.isSub) showFavToast('⭐ 已收藏（含上层主评论）');
 		else showFavToast(res.isNew ? (hasPics ? '⭐ 已收藏（图片缓存中…）' : '⭐ 已收藏') : '⭐ 已更新收藏');
 	}
 
-	// 菜单项点击入口：未收藏则收藏，已收藏则取消（切换）
-	async function handleFavToggle(menuEl, liEl) {
-		const renderer = climbToTag(menuEl, 'BILI-COMMENT-ACTION-BUTTONS-RENDERER')
-			|| climbToTag(menuEl, 'BILI-COMMENT-RENDERER');
+	// 动作栏星星点击入口：未收藏则收藏，已收藏则取消（切换）
+	async function handleFavToggle(abr, btn) {
+		const renderer = climbToTag(abr, 'BILI-COMMENT-ACTION-BUTTONS-RENDERER')
+			|| climbToTag(abr, 'BILI-COMMENT-RENDERER');
 		const data = renderer && renderer.data;
 		const rpid = data && data.rpid_str;
 		if (!rpid) { showFavToast('⚠️ 未取到评论数据'); return; }
 		if (favSetCache && favSetCache.has(rpid)) {
 			await deleteFavorite(rpid);
-			unmarkFaved(liEl);
+			unmarkFaved(btn);
 			showFavToast('✖ 已取消收藏');
 		} else {
-			await doFavorite(menuEl, liEl);
+			await doFavorite(abr, btn);
 		}
 	}
 
-	// 幂等地往每个评论菜单的 #options 里注入"收藏"项
-	function injectFavoriteMenuItems() {
-		if (!favSetCache) {
-			// 缓存未就绪：异步加载，加载完成后由下一次复扫补注入
-			loadFavCache().catch(() => { if (!favSetCache) favSetCache = new Set(); });
-			return;
+	// ---------- 动作栏常驻「收藏」按钮 ----------
+	// 直接插在 #dislike 与 #reply 之间，点一下即收藏 —— 这是唯一的收藏入口。
+	// 样式做法：克隆 #reply 这个容器（cloneNode 不会带走 B 站绑在上面的事件监听），
+	// 外来节点同样受该影子树的 CSS 作用域管辖，所以布局/悬停态/深色模式都能白捡；
+	// 但 B 站可能用 id 选择器写样式，去掉 id 后要顺手把关键布局属性抄过来兜底。
+	const FAV_BTN_ATTR = 'data-fav-btn';
+	const SVG_NS = 'http://www.w3.org/2000/svg';
+	let favBtnNoAnchorWarned = false;
+
+	function starSvg() {
+		const svg = document.createElementNS(SVG_NS, 'svg');
+		svg.setAttribute('viewBox', '0 0 24 24');
+		svg.setAttribute('width', '18');
+		svg.setAttribute('height', '18');
+		svg.setAttribute('aria-hidden', 'true');
+		svg.style.display = 'block';
+		const p = document.createElementNS(SVG_NS, 'path');
+		p.setAttribute('d', 'M12 3.6 14.6 8.9 20.4 9.75 16.2 13.85 17.19 19.66 12 16.9 6.81 19.66 7.8 13.85 3.6 9.75 9.4 8.9Z');
+		p.setAttribute('fill', 'none');
+		p.setAttribute('stroke', 'currentColor');
+		p.setAttribute('stroke-width', '1.6');
+		p.setAttribute('stroke-linejoin', 'round');
+		svg.appendChild(p);
+		return svg;
+	}
+
+	// 已收藏=实心蓝星，未收藏=灰色描边星（描边走 currentColor，深色模式与 hover 自动跟 B 站）
+	// 坑：B 站的影子 CSS 直接给内层 <button> 设了 color，在宿主 div 上改 color 传不下去，
+	// 于是 fill="currentColor" 会解成 B 站自己的灰色（实测 148,153,160）→ 收藏后变成灰星。
+	// 所以颜色要写到 button 上，并且已收藏态给 path 写死 fill/stroke，不再依赖 currentColor。
+	const FAV_ON_COLOR = '#00aeec';
+
+	function paintFavBtn(btn, faved) {
+		if (!btn) return;
+		const inner = btn.querySelector('button') || btn;
+		const p = btn.querySelector('path');
+		if (p) {
+			p.setAttribute('fill', faved ? FAV_ON_COLOR : 'none');
+			p.setAttribute('stroke', faved ? FAV_ON_COLOR : 'currentColor');
 		}
-		const menus = querySelectorAllDeep(document, 'bili-comment-menu');
-		for (const menu of menus) {
-			const sr = menu.shadowRoot;
-			if (!sr) continue;
-			const ul = sr.querySelector('#options') || sr.querySelector('ul');
-			if (!ul) continue;                       // 菜单尚未渲染，等下次复扫
-			if (ul.querySelector('[data-fav-item]')) continue; // 已注入，幂等
-			const tpl = ul.querySelector('li');
-			if (!tpl) continue;
-			const li = tpl.cloneNode(true);          // 克隆以继承组件内部样式
-			li.setAttribute('data-fav-item', '1');
-			li.removeAttribute('data-spm');
-			li.removeAttribute('data-mod');
-			li.removeAttribute('name');
-			li.textContent = '收藏';
-			li.style.cursor = 'pointer';
-			li.addEventListener('click', (e) => {
-				e.stopPropagation();                 // 抢在 B 站委托监听之前拦截
+		inner.style.color = faved ? FAV_ON_COLOR : '';
+		btn.style.color = faved ? FAV_ON_COLOR : '';
+		btn.dataset.favDone = faved ? '1' : '';
+		btn.title = faved ? '取消收藏（脚本）' : '收藏（脚本）';
+		btn.setAttribute('aria-label', btn.title);
+	}
+
+	function copyLayout(from, to) {
+		const cs = window.getComputedStyle(from);
+		['display', 'alignItems', 'gap', 'padding', 'margin', 'height', 'minWidth',
+		 'fontSize', 'lineHeight', 'color', 'cursor', 'flexShrink'].forEach(k => { to.style[k] = cs[k]; });
+	}
+
+	// 找出某个动作栏里已插入的收藏按钮。
+	// 关键：按钮在宿主元素**自己的 shadowRoot** 里，而 el.querySelector 看不见自身影子树，
+	// 只查 light DOM 会让幂等判断永远为假 → 每轮复扫多插一颗星。
+	function favBtnsIn(abr) {
+		const found = [];
+		if (abr.shadowRoot) found.push(...abr.shadowRoot.querySelectorAll(`[${FAV_BTN_ATTR}]`));
+		found.push(...abr.querySelectorAll(`[${FAV_BTN_ATTR}]`));
+		return found;
+	}
+
+	function injectFavActionButtons() {
+		if (!favSetCache) return;          // 收藏集合还没加载好，先不插，避免状态全错
+		const bars = querySelectorAllDeep(document, 'bili-comment-action-buttons-renderer');
+		let inserted = 0, skipped = 0, noAnchor = 0, deduped = 0;
+		for (const abr of bars) {
+			const existing = favBtnsIn(abr);
+			if (existing.length > 1) {     // 自愈：老版本重复插入的残留，只留第一颗
+				for (let i = 1; i < existing.length; i++) existing[i].remove();
+				deduped += existing.length - 1;
+			}
+			if (existing.length) { skipped++; continue; }                                  // 幂等：已插过
+			const sr = abr.shadowRoot;
+			const anchor = sr && sr.querySelector('#reply');
+			if (!anchor) { noAnchor++; continue; }                                  // 这一版还没渲染出动作栏，等下次复扫
+
+			const host = anchor.cloneNode(true);
+			host.removeAttribute('id');
+			host.setAttribute(FAV_BTN_ATTR, '1');
+			copyLayout(anchor, host);
+			const inner = host.querySelector('button') || host;
+			['data-spm', 'data-mod', 'name', 'title', 'aria-label'].forEach(a => { inner.removeAttribute(a); host.removeAttribute(a); });
+			inner.textContent = '';
+			inner.appendChild(starSvg());
+			inner.style.cursor = 'pointer';
+
+			host.addEventListener('click', (e) => {
+				e.stopPropagation();                 // B 站在动作栏上用事件委托，必须抢在它前面
 				e.preventDefault();
-				handleFavToggle(menu, li);           // 收藏 / 取消收藏 切换
+				handleFavToggle(abr, host);          // 收藏 / 取消收藏 切换
 			});
-			// 预标灰：该评论已在收藏集合中，则直接渲染为"已收藏"
-			const renderer = climbToTag(menu, 'BILI-COMMENT-ACTION-BUTTONS-RENDERER')
-				|| climbToTag(menu, 'BILI-COMMENT-RENDERER');
-			const rpid = renderer && renderer.data && renderer.data.rpid_str;
-			if (rpid && favSetCache.has(rpid)) markFaved(li);
-			ul.insertBefore(li, ul.firstElementChild);   // 置顶：排在复制/分享等原生项之前
+			sr.insertBefore(host, anchor);
+			paintFavBtn(host, favSetCache.has(String((abr.data && abr.data.rpid_str) || '')));
+			inserted++;
+		}
+		if (noAnchor && !favBtnNoAnchorWarned) {
+			favBtnNoAnchorWarned = true;
+			log(`⚠️ 有 ${noAnchor} 个动作栏里找不到 #reply（B 站可能改了结构）：这几条评论暂时没有收藏入口`);
 		}
 	}
 
@@ -1314,6 +1382,21 @@
 		toolbar.appendChild(createButton('🖼 缓存全图', () => cacheAllImages(), 'background:#67c23a;color:#fff;padding:4px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;'));
 		toolbar.appendChild(createButton('📥 导出', exportFavorites, 'background:#00aeec;color:#fff;padding:4px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;'));
 		toolbar.appendChild(createButton('📤 导入', importFavoritesFromFile, 'background:#ff9800;color:#fff;padding:4px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;'));
+		// 定位自检：常驻按钮到底插进去没有、卡在哪一步，一眼看到
+		toolbar.appendChild(createButton('🔍', () => {
+			const stat = () => {
+				const bars = querySelectorAllDeep(document, 'bili-comment-action-buttons-renderer');
+				const counts = bars.map(b => favBtnsIn(b).length);
+				return `动作栏 ${bars.length}｜有星 ${counts.filter(n => n >= 1).length}｜重复 ${counts.filter(n => n > 1).length}｜缺#reply ` +
+					`${bars.filter(b => b.shadowRoot && !b.shadowRoot.querySelector('#reply')).length}｜已收藏 ${favSetCache ? favSetCache.size : '?'}`;
+			};
+			const before = stat();
+			findAndEnhanceCommentArea();   // 补插 + 去重
+			const after = stat();
+			log('🔍 定位自检 补插前:', before, '\n🔍 定位自检 补插后:', after);
+			showFavToast(before === after ? '✅ ' + after : `修复前 ${before}`);
+			if (before !== after) setTimeout(() => showFavToast('修复后 ' + after), 1800);
+		}, 'padding:4px 8px;font-size:13px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:6px;cursor:pointer;').title = '定位自检：统计动作栏收藏按钮注入情况，并补插/去重一轮');
 		// 云端状态指示：点击直达云端同步设置
 		const cloudChip = createButton('☁️ …', openCloudConfigPopup, 'background:#f5f5f5;color:#666;padding:4px 10px;font-size:12px;border:1px solid #ddd;border-radius:12px;cursor:pointer;');
 		toolbar.appendChild(cloudChip);
@@ -1334,9 +1417,11 @@
 	let cloudAuthStatusEl = null;
 
 	// 刷新弹窗里的授权状态文案（授权回传到达时也会调用）
+	// 注意：GM_getValue 不一定返回 Promise（有些上下文里直接同步给值），取值一律用 await，别链 .then
+	// —— 否则会抛 "GM_getValue(...).then is not a function"，这一行状态就永远停在「检查中...」
 	function refreshCloudAuthStatus() {
 		if (!cloudAuthStatusEl || !cloudAuthStatusEl.isConnected) return;
-		getFavAuth().then(a => {
+		getFavAuth().then(async a => {
 			if (!a) {
 				cloudAuthStatusEl.textContent = '🔑 授权状态：未授权';
 				cloudAuthStatusEl.style.color = '#ff4d4f';
@@ -1344,9 +1429,13 @@
 			}
 			const exp = a.expires_at ? new Date(a.expires_at) : null;
 			const expired = exp && exp.getTime() < Date.now();
-			cloudAuthStatusEl.textContent = expired
-				? '🔑 授权状态：已过期（下次同步自动续期，失败则需重新授权）'
-				: '🔑 授权状态：已授权' + (exp ? '（有效期至 ' + exp.toLocaleString() + '，自动续期）' : '');
+			const last = Number(await GM_getValue(FAV_AUTH_RENEW_KEY, 0)) || 0;
+			if (!cloudAuthStatusEl || !cloudAuthStatusEl.isConnected) return;
+			const lastTxt = last ? Math.max(0, Math.round((Date.now() - last) / 60000)) + ' 分钟前' : '从未';
+			cloudAuthStatusEl.textContent = (expired
+				? '🔑 授权状态：已过期（下次调用云端时自动续期）'
+				: '🔑 授权状态：已授权' + (exp ? '（有效期至 ' + exp.toLocaleString() + '）' : ''))
+				+ `｜上次续期 ${lastTxt}`;
 			cloudAuthStatusEl.style.color = expired ? '#faad14' : '#52c41a';
 		});
 	}
@@ -1471,7 +1560,7 @@
 					say('#ff4d4f', '❌ 401：登录态被拒（可能已在发布页登出），请重新授权。');
 					refreshCloudAuthStatus();
 				} else if (r.ok || (j && j.error === '缺少条目')) {
-					say('#52c41a', '✅ 链路正常（空请求体被拒属正常预期）。');
+					say('#52c41a', '✅ 链路正常（可以在B站评论区收藏评论并同步到云端）');
 				} else {
 					say('#faad14', '⚠️ HTTP ' + r.status + (j ? ' 返回: ' + JSON.stringify(j) : ''));
 				}
@@ -1507,6 +1596,7 @@
 		refreshCloudAuthStatus();
 		renderSyncLine();
 	}
+	
 	// 独立管理窗口（原为 BiliSmartComment 设置弹窗里的"我的收藏"标签页）
 	function openFavPopup() {
 		if (favPopupEl && favPopupEl.isConnected) {
@@ -1537,9 +1627,9 @@
 
 	function findAndEnhanceCommentArea() {
 		try {
-			injectFavoriteMenuItems();
+			injectFavActionButtons();
 		} catch (e) {
-			console.error('查找评论区出错:', e);
+			console.error('注入动作栏收藏按钮出错:', e);
 		}
 	}
 
