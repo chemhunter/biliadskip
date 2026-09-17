@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BiliFavComments（B站评论收藏&备份）
 // @namespace    https://github.com/chemhunter/biliadskip/raw/main/js/BiliFavComments.user.js
-// @description  B站评论收藏：动作栏星星按钮收藏与取消、本地管理面板（搜索/导出/删除）、图片本地缓存、云端同步
-// @version      0.24
+// @description  B站评论收藏：动作栏星星收藏（公开蓝星/私人粉星）、评论区导航条入口按钮、本地管理面板（搜索/导出/删除）、图片本地缓存、云端同步（顺带上传用户资料快照，供发布页悬停名片）
+// @version      0.26
 // @author       chmehunter
 // @match        https://www.bilibili.com/video/*
 // @match        https://www.bilibili.com/opus/*
@@ -279,6 +279,24 @@
 
 	// 已收藏 rpid 集合缓存（null 表示尚未加载），供注入时同步预标灰
 	let favSetCache = null;
+	// rpid → 是否私人收藏（与 favSetCache 同时建）；决定星标是蓝还是粉
+	let favPrivCache = null;
+
+	// 新收藏的默认可见性：公开（默认）/ 私人。
+	// 私人 = 这条收藏（连同它名下的回复）只在发布页「你自己的视图」里出现，其他访客读不到。
+	const FAV_PRIV_DEFAULT_KEY = 'bili_fav_default_private';
+
+	async function getFavDefaultPrivate() {
+		try { return (await GM_getValue(FAV_PRIV_DEFAULT_KEY, false)) === true; }
+		catch (e) { return false; }
+	}
+
+	async function setFavDefaultPrivate(v) {
+		const flag = v === true;
+		try { await GM_setValue(FAV_PRIV_DEFAULT_KEY, flag); }
+		catch (e) { log('⚠️ 默认可见性保存失败:', e); }
+		return flag;
+	}
 
 	// 读取时规范化：清掉顶层的空 parent/root/children 与子评论的冗余字段（旧数据也生效）
 	function sanitizeChild(c) {
@@ -312,20 +330,25 @@
 	async function loadFavCache() {
 		const list = await getFavorites();
 		const s = new Set();
+		const priv = new Map();
 		for (const top of list) {
-			if (top && top.rpid_str) s.add(top.rpid_str);
+			const p = top && top.isPrivate === true;
+			if (top && top.rpid_str) { s.add(top.rpid_str); priv.set(top.rpid_str, p); }
 			if (top && Array.isArray(top.children)) {
-				for (const c of top.children) if (c && c.rpid_str) s.add(c.rpid_str);
+				// 隐私以「主评论那一组」为单位，子评论跟着父组走
+				for (const c of top.children) if (c && c.rpid_str) { s.add(c.rpid_str); priv.set(c.rpid_str, p); }
 			}
 		}
 		favSetCache = s;
+		favPrivCache = priv;
 		return favSetCache;
 	}
 
 	// 把动作栏的星星按钮标成已收藏态（只改填充色，不能动 textContent）
-	function markFaved(btn) {
+	// 公开=蓝实心，私人=粉实心（与发布页的私人标识同一色系）
+	function markFaved(btn, priv) {
 		if (!btn) return;
-		paintFavBtn(btn, true);
+		paintFavBtn(btn, true, priv);
 	}
 
 	// 恢复为未收藏态（取消收藏时用）
@@ -341,6 +364,9 @@
 		if (i >= 0) {
 			const old = list[i];
 			const merged = Object.assign({}, entry, { savedAt: old.savedAt || entry.savedAt });
+			// 隐私设置只在「显式给了值」时才覆盖：收藏某条子回复会顺带 upsert 父组，
+			// 不带这个保护就会把父组原有的私人设置悄悄刷回公开
+			if (entry.isPrivate === undefined && old.isPrivate !== undefined) merged.isPrivate = old.isPrivate;
 			if (Array.isArray(old.children) && old.children.length) merged.children = old.children;
 			else delete merged.children;
 			list[i] = merged;
@@ -511,6 +537,7 @@
 			originalText: '', // 转发时的原创文字
 			videoTitle: '',
 			upName: '', // 动态博主ID
+			upMid: '', // 动态博主 mid（DOM 无链接，只能从组件数据里读）
 			replyText: replyText,
 			isReplyMode: isReplyMode
 		};
@@ -519,6 +546,13 @@
 		const upNameEl = dynItem?.querySelector('.bili-dyn-title__text') || scope.querySelector('.bili-dyn-title__text');
 		if (upNameEl) {
 			result.upName = (upNameEl.innerText || upNameEl.textContent || '').trim();
+		}
+		// 0b. 博主 mid：新版动态卡片里作者名是 span、没有 space 链接，DOM 拿不到 ID，
+		//     读组件实例的 module_author；昵称缺失时用组件里的 name 校正（DOM 文本可能带会员后缀/空白）
+		const dynAuthor = dynAuthorMid(dynItem);
+		if (dynAuthor) {
+			result.upMid = dynAuthor.mid;
+			if (!result.upName && dynAuthor.name) result.upName = dynAuthor.name;
 		}
 
 		// 1. 提取原创文字（转发动态最上层文字）
@@ -693,6 +727,21 @@
 		return null;
 	}
 
+	// 动态页取发布者 mid：新版动态卡片的作者名是 <span>、不带 space 链接，DOM 上根本取不到 ID，
+	// 只能读组件实例里的原始数据。.bili-dyn-item 是 Vue2 组件，_props.data 就是接口返回的那条动态，
+	// modules.module_author 即发布者（转发动态再退一步取 orig 的原作者）。
+	// 只认传进来的那一个 dynItem —— 动态流里同时挂着几十条，绝不能拿首条的作者张冠李戴。
+	function dynAuthorMid(dynItem) {
+		if (!dynItem || !dynItem.classList || !dynItem.classList.contains('bili-dyn-item')) return null;
+		try {
+			const d = dynItem.__vue__ && dynItem.__vue__._props && dynItem.__vue__._props.data;
+			const ma = (d && d.modules && d.modules.module_author) ||
+				(d && d.orig && d.orig.modules && d.orig.modules.module_author);
+			if (ma && ma.mid) return { mid: String(ma.mid), name: String(ma.name || '') };
+		} catch (e) { /* 组件结构变了就当作取不到，交给后续兜底 */ }
+		return null;
+	}
+
 	// 取 UP 主 mid：优先 __INITIAL_STATE__，其次 UP 卡片链接，最后动态页容器内爬
 	function getUpMid(contextEl) {
 		const sm = getMetaFromState();
@@ -703,6 +752,8 @@
 			let el = contextEl;
 			while (el) {
 				if (el.classList && el.classList.contains('bili-dyn-item')) {
+					const author = dynAuthorMid(el);
+					if (author) return author.mid;
 					const a = el.querySelector('a[href*="space.bilibili.com/"]');
 					const mm = a && (a.getAttribute('href') || '').match(/space\.bilibili\.com\/(\d+)/);
 					if (mm) return mm[1];
@@ -797,18 +848,133 @@
 		if (!token) { log('🔑 未授权或授权已失效，跳过云端同步（云端设置里走途径 A 授权或途径 B 导入令牌）'); return; }
 		const payload = { top: topEntry };
 		if (childEntry) payload.child = childEntry;
+		// 顺手把这条评论涉及的人（作者 / UP 主 / 子评论作者）的资料一并带上，
+		// 新收藏立刻就能在发布页悬停出名片，不用等到下次点「评论同步」
+		try {
+			const uc = await ensureUserCards(collectUserMids([topEntry, childEntry]));
+			if (uc.fresh.length) payload.users = uc.fresh;
+		} catch (e) { log('⚠️ 用户资料抓取失败（不影响评论同步）:', e); }
 		fetch(SYNC_URL, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
 			body: JSON.stringify(payload),
 		}).then(r => r.json()).then(j => {
-			if (j && j.success) log('☁️ 云端同步完成:', j.results);
+			if (j && j.success) log('☁️ 云端同步完成:', j.results, '用户资料:', j.users);
 			else if (j && j.error === 'unauthorized') log('⚠️ 云端同步被拒（登录已过期？重新授权试试）:', j);
 			else log('⚠️ 云端同步返回异常:', j);
 		}).catch(e => log('⚠️ 云端同步失败（离线或函数未部署）:', e));
 	}
 
 	const cloudHeaders = (token) => ({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + token });
+
+	// ======================================================
+	// ============ 用户资料快照（发布页名片数据源）==========
+	// ======================================================
+	// 发布页要显示「头像/等级/粉丝/关注/获赞/简介」的悬停名片，但 api.bilibili.com/x/web-interface/card
+	// 的 CORS 只放行 *.bilibili.com —— 外站页面直取无解，只能由跑在同源里的本脚本顺手抓了上传。
+	// 抓到的快照存两个地方：本地 GM 缓存（省请求）+ 云端 user_data 表（页面读它渲染）。
+	// 快照本身是静态的：粉丝数不会自己动。靠 TTL 到期后重抓 + 用户持续收藏同一 UP 主的其它评论来缓慢刷新。
+	const USERS_KEY = 'bili_fav_users';
+	const USER_TTL = 7 * 24 * 3600 * 1000;   // 同一用户 7 天内不重抓
+	const USER_FETCH_CAP = 150;              // 单轮最多抓多少人（首次补存量时分会分几轮）
+	const USER_POST_SIZE = 50;               // 上传分块
+	const USER_CARD_API = 'https://api.bilibili.com/x/web-interface/card';
+
+	let usersCache = null;   // { [mid]: card }，首次用到时从 GM 存储载入
+
+	async function loadUsersCache() {
+		if (usersCache) return usersCache;
+		let raw = null;
+		try { raw = await GM_getValue(USERS_KEY, null); } catch (e) { raw = null; }
+		usersCache = (raw && typeof raw === 'object') ? raw : {};
+		return usersCache;
+	}
+
+	async function saveUsersCache() {
+		try { await GM_setValue(USERS_KEY, usersCache || {}); }
+		catch (e) { log('⚠️ 用户资料缓存写入失败:', e); }
+	}
+
+	// 抓一个人的 card 并归一成 user_data 行。任何异常都返回 null —— 半成品绝不往上传
+	async function fetchUserCard(mid) {
+		try {
+			const r = await fetch(USER_CARD_API + '?mid=' + encodeURIComponent(mid) + '&photo=false', {
+				credentials: 'include',   // 同源带 cookie，不带的话容易被风控 -352
+			});
+			const j = await r.json().catch(() => null);
+			if (!r.ok || !j || j.code !== 0) {
+				if (j && (j.code === -404 || j.code === 625)) log(`🙅 用户 ${mid} 不存在或已注销`);
+				else log(`⚠️ 用户 ${mid} 资料接口异常:`, j && j.code, j && j.message);
+				return null;
+			}
+			const c = j.data && j.data.card;
+			if (!c || !c.mid || !c.name) return null;
+			return {
+				mid: String(c.mid),
+				name: String(c.name),
+				face: String(c.face || '').replace(/^http:\/\//i, 'https://'),
+				sign: String(c.sign || ''),
+				level: Number(c.level_info && c.level_info.current_level) || 0,
+				fans: Number(j.data.follower != null ? j.data.follower : c.fans) || 0,
+				following: Number(c.attention) || 0,
+				likes: Number(j.data.like_num) || 0,
+				fetched_at: Date.now(),
+			};
+		} catch (e) { log(`⚠️ 抓取用户 ${mid} 资料失败:`, e); return null; }
+	}
+
+	// 从条目里收集要抓的 mid：评论作者 + UP 主 + 各子评论作者
+	function collectUserMids(items) {
+		const set = new Set();
+		const add = (v) => { const s = v == null ? '' : String(v); if (/^\d+$/.test(s) && s !== '0') set.add(s); };
+		for (const it of (items || [])) {
+			if (!it) continue;
+			add(it.mid); add(it.upMid); add(it.up_mid);
+			for (const c of (Array.isArray(it.children) ? it.children : [])) add(c && c.mid);
+		}
+		return Array.from(set);
+	}
+
+	// 保证这批 mid 都有资料：缓存缺失或已过期的现抓（4 路小并发，别把自己刷进风控）。
+	// 只回「本轮新抓到的」—— 缓存里本来就有的没必要再传一趟，云端按 fetched_at 单调合并。
+	async function ensureUserCards(mids) {
+		const cache = await loadUsersCache();
+		const now = Date.now();
+		const stale = [];
+		for (const mid of mids) {
+			const hit = cache[mid];
+			if (hit && hit.fetched_at && (now - hit.fetched_at) < USER_TTL) continue;
+			stale.push(mid);
+		}
+		const need = stale.slice(0, USER_FETCH_CAP);
+		const deferred = stale.length - need.length;
+		if (!need.length) return { fresh: [], failed: 0, deferred: 0 };
+
+		const fresh = [];
+		let cursor = 0, failed = 0;
+		const worker = async () => {
+			while (cursor < need.length) {
+				const mid = need[cursor++];
+				const card = await fetchUserCard(mid);
+				if (card) { cache[mid] = card; fresh.push(card); } else failed++;
+			}
+		};
+		await Promise.all([worker(), worker(), worker(), worker()]);
+		await saveUsersCache();
+		log(`👤 用户资料：本轮抓取 ${fresh.length}/${need.length} 人` + (failed ? `，失败 ${failed}` : '') + (deferred ? `，还有 ${deferred} 人下轮继续` : ''));
+		return { fresh, failed, deferred };
+	}
+
+	// 分块上传用户快照（biliFavSync 的第三种请求形态：只带 users，不动评论）
+	async function postUserCards(cards, token, post) {
+		let sent = 0;
+		for (let i = 0; i < cards.length; i += USER_POST_SIZE) {
+			const chunk = cards.slice(i, i + USER_POST_SIZE);
+			try { await post({ users: chunk }); sent += chunk.length; }
+			catch (e) { log('⚠️ 用户资料上传失败:', e); }
+		}
+		return sent;
+	}
 
 	// 单向「评论同步」：先问云端「上次同步之后」已有哪些 rpid（只认自己账号，服务端验签），
 	// 再把本地有、云端没有的条目补传上去；不会从云端往本地拉，也不会删云端数据。
@@ -819,6 +985,12 @@
 		const since = await getFavSyncTs();
 		const startedAt = Date.now();
 		const prog = (msg) => { if (onProgress) onProgress(msg); };
+		const post = async (body) => {
+			const r = await fetch(SYNC_URL, { method: 'POST', headers: cloudHeaders(token), body: JSON.stringify(body) });
+			const j = await r.json().catch(() => null);
+			if (!r.ok || !j || !j.success) throw new Error((j && (j.error || j.details)) || ('HTTP ' + r.status));
+			return j;
+		};
 
 		prog('正在向云端索取已同步清单…');
 		const lr = await fetch(SYNC_URL, {
@@ -830,11 +1002,22 @@
 		if (lj && lj.error === '缺少条目') throw new Error('云端函数版本过旧（不认识 action:"list"）：请重新部署 biliFavSync');
 		if (!lj || !lj.success) throw new Error('索取清单失败：' + (lj ? JSON.stringify(lj).slice(0, 200) : 'HTTP ' + lr.status));
 
+		// 用户资料：按「全部本地收藏」涉及的 mid 补齐，而不只是本轮要补传的那几条 ——
+		// 存量收藏的作者往往还没进过 user_data，这样点一次同步就能把欠账还上（超过单轮上限的留到下轮）。
+		const allEntries = await getFavorites();
+		prog('正在补齐用户资料…');
+		const uc = await ensureUserCards(collectUserMids(allEntries));
+		let usersSent = 0;
+		if (uc.fresh.length) {
+			usersSent = await postUserCards(uc.fresh, token, post);
+			prog(`用户资料已上传 ${usersSent} 人${uc.deferred ? `，还有 ${uc.deferred} 人待补（再点一次同步继续）` : ''}`);
+		}
+
 		const cloudTops = new Set((lj.tops || []).map(String));
 		const cloudKids = new Set((lj.children || []).map(String));
 		// 水位线判断：since=0（从未同步）时全量参与比对，缺 savedAt 的老数据也不漏
 		const afterTs = (ts) => since <= 0 || Number(ts) > since;
-		const list = await getFavorites();
+		const list = allEntries;
 		const missTops = [], missKids = [];
 		for (const top of list) {
 			if (!top || !top.rpid_str) continue;
@@ -855,19 +1038,17 @@
 		}
 
 		const total = missTops.length + missKids.length;
-		const stat = { since, startedAt, total, sent: 0, failed: 0, tops: missTops.length, kids: missKids.length };
+		const stat = {
+			since, startedAt, total, sent: 0, failed: 0,
+			tops: missTops.length, kids: missKids.length,
+			users: usersSent, usersDeferred: uc.deferred,
+		};
 		if (!total) {
 			await setFavSyncTs(startedAt);
 			return stat;
 		}
 
 		// 分块提交：主评论带图转存较慢，每批 5 条；子评论无图，每批 20 条。父行先提交，子行后提交
-		const post = async (body) => {
-			const r = await fetch(SYNC_URL, { method: 'POST', headers: cloudHeaders(token), body: JSON.stringify(body) });
-			const j = await r.json().catch(() => null);
-			if (!r.ok || !j || !j.success) throw new Error((j && (j.error || j.details)) || ('HTTP ' + r.status));
-			return j;
-		};
 		const pushChunks = async (items, size, key) => {
 			for (let i = 0; i < items.length; i += size) {
 				const chunk = items.slice(i, i + size);
@@ -894,6 +1075,8 @@
 		const isSub = !!(data.parent && String(data.parent) !== '0');
 		const entry = await buildEntry(renderer, isSub);
 		if (!entry) return { ok: false };
+		// 直接收藏主评论 → 按当前默认可见性打标；收藏子回复 → 不动父组已有的隐私设置
+		if (!isSub) entry.isPrivate = await getFavDefaultPrivate();
 		const list = await getFavorites();
 		const parentRpid = isSub ? entry.parent : '';
 		let isNew = false, topRef = entry, isSubResult = false;
@@ -918,6 +1101,12 @@
 			favSetCache.add(entry.rpid_str);
 			if (topRef && topRef !== entry) favSetCache.add(topRef.rpid_str);
 		}
+		if (favPrivCache) {
+			// 星标颜色跟着「整组」走：子评论也按父组的隐私设置上色
+			const p = !!(topRef && topRef.isPrivate);
+			favPrivCache.set(entry.rpid_str, p);
+			if (topRef) favPrivCache.set(topRef.rpid_str, p);
+		}
 		cacheImagesForEntry(entry);
 		if (topRef && topRef !== entry) cacheImagesForEntry(topRef);
 		syncFavoriteToCloud(topRef, isSubResult ? entry : null);
@@ -929,10 +1118,12 @@
 			|| climbToTag(abr, 'BILI-COMMENT-RENDERER');
 		const res = await collectAndSaveFavorite(renderer);
 		if (!res.ok) { showFavToast('⚠️ 未取到评论数据'); return; }
-		markFaved(btn);
+		const priv = !!(res.topRef && res.topRef.isPrivate);
+		markFaved(btn, priv);
 		const hasPics = res.entry.pictures && res.entry.pictures.length;
-		if (res.isSub) showFavToast('⭐ 已收藏（含上层主评论）');
-		else showFavToast(res.isNew ? (hasPics ? '⭐ 已收藏（图片缓存中…）' : '⭐ 已收藏') : '⭐ 已更新收藏');
+		if (res.isSub) showFavToast(priv ? '🔒 已收藏（含上层主评论 · 私人）' : '⭐ 已收藏（含上层主评论）');
+		else if (!res.isNew) showFavToast('⭐ 已更新收藏');
+		else showFavToast((hasPics ? '已收藏（图片缓存中…）' : '已收藏') + (priv ? ' · 🔒 私人' : ' · 🌐 公开'));
 	}
 
 	// 动作栏星星点击入口：未收藏则收藏，已收藏则取消（切换）
@@ -982,19 +1173,23 @@
 	// 于是 fill="currentColor" 会解成 B 站自己的灰色（实测 148,153,160）→ 收藏后变成灰星。
 	// 所以颜色要写到 button 上，并且已收藏态给 path 写死 fill/stroke，不再依赖 currentColor。
 	const FAV_ON_COLOR = '#00aeec';
+	const FAV_PRIV_COLOR = '#fb7299';   // B站粉：私人收藏的星标填充色，与发布页的私人标识同色系
 
-	function paintFavBtn(btn, faved) {
+	// 三态：未收藏=灰描边；公开收藏=蓝实心；私人收藏=粉实心
+	function paintFavBtn(btn, faved, priv) {
 		if (!btn) return;
 		const inner = btn.querySelector('button') || btn;
 		const p = btn.querySelector('path');
+		const on = faved ? (priv ? FAV_PRIV_COLOR : FAV_ON_COLOR) : '';
 		if (p) {
-			p.setAttribute('fill', faved ? FAV_ON_COLOR : 'none');
-			p.setAttribute('stroke', faved ? FAV_ON_COLOR : 'currentColor');
+			p.setAttribute('fill', faved ? on : 'none');
+			p.setAttribute('stroke', faved ? on : 'currentColor');
 		}
-		inner.style.color = faved ? FAV_ON_COLOR : '';
-		btn.style.color = faved ? FAV_ON_COLOR : '';
+		inner.style.color = on;
+		btn.style.color = on;
 		btn.dataset.favDone = faved ? '1' : '';
-		btn.title = faved ? '取消收藏（脚本）' : '收藏（脚本）';
+		btn.dataset.favPriv = faved && priv ? '1' : '';
+		btn.title = faved ? (priv ? '取消收藏（脚本 · 私人：只有你自己看得到）' : '取消收藏（脚本 · 公开）') : '收藏（脚本）';
 		btn.setAttribute('aria-label', btn.title);
 	}
 
@@ -1012,6 +1207,61 @@
 		if (abr.shadowRoot) found.push(...abr.shadowRoot.querySelectorAll(`[${FAV_BTN_ATTR}]`));
 		found.push(...abr.querySelectorAll(`[${FAV_BTN_ATTR}]`));
 		return found;
+	}
+
+	// ===== 评论区导航条入口（视频页 / 动态页共用同一套组件）=====
+	// 路径：bili-comments → #header > bili-comments-header-renderer → (影子) #navbar
+	// 动态页是卡片流，每张展开的评论区都有自己的导航条 → 全页只装一个入口，
+	// 判定用「页面上是否已存在我们的按钮」而不是「当前这个导航条有没有」，避免展开第二张又冒一个。
+	const NAV_BTN_ATTR = 'data-fav-nav-btn';
+	let navBtnWarned = false;
+
+	function commentNavbars() {
+		const out = [];
+		for (const hr of querySelectorAllDeep(document, 'bili-comments-header-renderer')) {
+			const nb = hr.shadowRoot && hr.shadowRoot.querySelector('#navbar');
+			if (nb) out.push(nb);
+		}
+		return out;
+	}
+
+	function makeNavbarButton() {
+		const btn = document.createElement('div');
+		btn.setAttribute(NAV_BTN_ATTR, '1');
+		btn.textContent = '⭐ 我的收藏';
+		btn.title = '打开本地收藏面板（BiliFavComments）';
+		// 不依赖 B 站自己的类名：颜色继承导航条文字，深浅色模式都跟得上；margin-left:auto 让它靠最右
+		btn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;flex-shrink:0;'
+			+ 'margin-left:auto;padding:2px 10px;border:1px solid rgba(128,128,128,.35);border-radius:999px;'
+			+ 'font-size:12px;line-height:1.8;white-space:nowrap;cursor:pointer;user-select:none;'
+			+ 'color:inherit;transition:color .15s,border-color .15s,background-color .15s;';
+		btn.addEventListener('mouseenter', () => { btn.style.color = '#00aeec'; btn.style.borderColor = '#00aeec'; });
+		btn.addEventListener('mouseleave', () => { btn.style.color = ''; btn.style.borderColor = ''; });
+		btn.addEventListener('click', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			openFavPopup();
+		});
+		return btn;
+	}
+
+	function injectNavbarButton() {
+		const bars = commentNavbars();
+		if (!bars.length) {
+			if (!navBtnWarned) {           // 评论组件还没渲染出导航条是常态，只提示一次
+				navBtnWarned = true;
+				log('⏳ 评论区导航条尚未渲染，入口按钮稍后随复扫补上');
+			}
+			return;
+		}
+		const has = (nb) => !!nb.querySelector(`[${NAV_BTN_ATTR}]`);
+		let placed = bars.some(has);
+		for (const nb of bars) {
+			if (has(nb)) continue;
+			if (placed) continue;          // 已有入口，别在第二张卡片上再放一个
+			nb.appendChild(makeNavbarButton());
+			placed = true;
+		}
 	}
 
 	function injectFavActionButtons() {
@@ -1045,7 +1295,8 @@
 				handleFavToggle(abr, host);          // 收藏 / 取消收藏 切换
 			});
 			sr.insertBefore(host, anchor);
-			paintFavBtn(host, favSetCache.has(String((abr.data && abr.data.rpid_str) || '')));
+			const rpidKey = String((abr.data && abr.data.rpid_str) || '');
+			paintFavBtn(host, favSetCache.has(rpidKey), !!(favPrivCache && favPrivCache.get(rpidKey)));
 			inserted++;
 		}
 		if (noAnchor && !favBtnNoAnchorWarned) {
@@ -1097,6 +1348,13 @@
 			head.appendChild(item.upMid
 				? createElement('a', { textContent: item.upName, href: 'https://space.bilibili.com/' + item.upMid, target: '_blank', rel: 'noopener', title: upTip, style: upStyle })
 				: createElement('span', { textContent: item.upName, title: 'UP主：' + item.upName, style: upStyle }));
+		}
+		// 私人行给个粉色小标签：与动作栏的粉星、发布页的私人标识同一套语义
+		if (!isChild && item.isPrivate) {
+			head.appendChild(createElement('span', {
+				textContent: '🔒 私人', title: '这条收藏只有你自己能在发布页看到',
+				style: 'font-size:11px;color:#fb7299;background:rgba(251,114,153,.12);border-radius:999px;padding:1px 8px;flex-shrink:0;'
+			}));
 		}
 		head.appendChild(createButton('删除', () => deleteFavorite(item.rpid_str), 'background:#ff5722;color:#fff;padding:2px 12px;font-size:12px;border:none;border-radius:4px;cursor:pointer;'));
 		row.appendChild(head);
@@ -1192,6 +1450,7 @@
 		}
 		await GM_setValue(FAV_KEY, next);
 		if (favSetCache) favSetCache.delete(rpid);
+		if (favPrivCache) favPrivCache.delete(rpid);
 		await refreshFavPanel();
 		showFavToast('🗑️ 已删除');
 	}
@@ -1365,6 +1624,19 @@
 		refreshFavCloudChip();
 	}
 
+	// 默认可见性开关的外观：私人用 B站粉，与星标 / 发布页标识同一套颜色语言
+	function paintPrivChip(chip, priv) {
+		if (!chip) return;
+		chip.dataset.priv = priv ? '1' : '';
+		chip.textContent = priv ? '🔒 新收藏：私人' : '🌐 新收藏：公开';
+		chip.style.background = priv ? 'rgba(251,114,153,.12)' : '#f5f5f5';
+		chip.style.color = priv ? '#fb7299' : '#666';
+		chip.style.borderColor = priv ? 'rgba(251,114,153,.45)' : '#ddd';
+		chip.title = priv
+			? '当前：新收藏默认为「私人」—— 只有你自己能在发布页看到。点击切回公开'
+			: '当前：新收藏默认为「公开」—— 所有访客可见。点击改为私人';
+	}
+
 	function buildFavoritesPanel() {
 		const panel = document.createElement('div');
 		panel.style.cssText = 'padding: 0 10px;';
@@ -1383,12 +1655,14 @@
 		toolbar.appendChild(createButton('📥 导出', exportFavorites, 'background:#00aeec;color:#fff;padding:4px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;'));
 		toolbar.appendChild(createButton('📤 导入', importFavoritesFromFile, 'background:#ff9800;color:#fff;padding:4px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;'));
 		// 定位自检：常驻按钮到底插进去没有、卡在哪一步，一眼看到
-		toolbar.appendChild(createButton('🔍', () => {
+		const selfCheckBtn = createButton('🔍', () => {
 			const stat = () => {
 				const bars = querySelectorAllDeep(document, 'bili-comment-action-buttons-renderer');
 				const counts = bars.map(b => favBtnsIn(b).length);
+				const navs = commentNavbars();
 				return `动作栏 ${bars.length}｜有星 ${counts.filter(n => n >= 1).length}｜重复 ${counts.filter(n => n > 1).length}｜缺#reply ` +
-					`${bars.filter(b => b.shadowRoot && !b.shadowRoot.querySelector('#reply')).length}｜已收藏 ${favSetCache ? favSetCache.size : '?'}`;
+					`${bars.filter(b => b.shadowRoot && !b.shadowRoot.querySelector('#reply')).length}｜已收藏 ${favSetCache ? favSetCache.size : '?'}` +
+					`｜导航条 ${navs.length} 装 ${navs.filter(nb => nb.querySelector(`[${NAV_BTN_ATTR}]`)).length}`;
 			};
 			const before = stat();
 			findAndEnhanceCommentArea();   // 补插 + 去重
@@ -1396,7 +1670,20 @@
 			log('🔍 定位自检 补插前:', before, '\n🔍 定位自检 补插后:', after);
 			showFavToast(before === after ? '✅ ' + after : `修复前 ${before}`);
 			if (before !== after) setTimeout(() => showFavToast('修复后 ' + after), 1800);
-		}, 'padding:4px 8px;font-size:13px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:6px;cursor:pointer;').title = '定位自检：统计动作栏收藏按钮注入情况，并补插/去重一轮');
+		}, 'padding:4px 8px;font-size:13px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:6px;cursor:pointer;');
+		// 注意：别写成 appendChild(createButton(...).title = '…') —— 赋值表达式的值是右边那个字符串，
+		// 会变成 appendChild(字符串) 直接抛错，整个面板都渲染不出来
+		selfCheckBtn.title = '定位自检：统计动作栏收藏按钮注入情况，并补插/去重一轮';
+		toolbar.appendChild(selfCheckBtn);
+		// 默认可见性开关：决定「新收藏」是公开还是私人（私人 = 发布页上只有你自己能看到）
+		const privChip = createButton('🌐 新收藏：公开', async () => {
+			const next = privChip.dataset.priv !== '1';
+			await setFavDefaultPrivate(next);
+			paintPrivChip(privChip, next);
+			showFavToast(next ? '🔒 之后的新收藏默认为私人（只有你能在发布页看到）' : '🌐 之后的新收藏默认为公开');
+		}, 'padding:4px 10px;font-size:12px;border:1px solid #ddd;border-radius:12px;cursor:pointer;');
+		toolbar.appendChild(privChip);
+		getFavDefaultPrivate().then(v => paintPrivChip(privChip, v));   // 面板重建时异步刷回当前设置
 		// 云端状态指示：点击直达云端同步设置
 		const cloudChip = createButton('☁️ …', openCloudConfigPopup, 'background:#f5f5f5;color:#666;padding:4px 10px;font-size:12px;border:1px solid #ddd;border-radius:12px;cursor:pointer;');
 		toolbar.appendChild(cloudChip);
@@ -1528,7 +1815,8 @@
 		// ── 连接自检 + 评论同步（独立功能，不参与授权流程）
 		const boxC = addSection('连接自检与评论同步',
 			`测试连接：向云端函数发一次空请求，只验证「地址可达 + 登录态被接受」，不会写入任何数据。
-评论同步：单向同步，仅把云端没有的收藏提交上云，不从云端向下同步、也不删除云端条目。`);
+评论同步：单向同步，仅把云端没有的收藏提交上云，不从云端向下同步、也不删除云端条目。
+每轮同步还会顺带补齐/刷新收藏涉及的用户资料快照（发布页悬停名片的数据源，同一人 7 天内不重抓）。`);
 		const syncLine = createElement('div', {
 			textContent: '⏱ 上次同步：检查中…',
 			style: 'font-size:12px;color:#888;margin-bottom:8px;'
@@ -1574,9 +1862,11 @@
 			say('#888', '同步中…');
 			try {
 				const st = await runFavCloudSync(msg => say('#888', msg));
-				if (!st.total) say('#52c41a', '✅ 已是最新：本地没有云端缺失的条目，同步时间戳已更新。');
-				else if (st.failed) say('#ff4d4f', `⚠️ 已补传 ${st.sent}/${st.total} 条，失败 ${st.failed} 条：时间戳未推进，处理后再接着点「评论同步」即可续传。`);
-				else say('#52c41a', `✅ 同步完成：补传 ${st.total} 条（主评论 ${st.tops} / 子评论 ${st.kids}），同步时间戳已更新。`);
+				const uTxt = st.users ? `，用户资料 ${st.users} 人` : (st.usersDeferred ? '' : '');
+				const dTxt = st.usersDeferred ? `（还有 ${st.usersDeferred} 人待补，再点一次继续）` : '';
+				if (!st.total) say('#52c41a', '✅ 评论已是最新：本地没有云端缺失的条目。' + uTxt.replace(/^，/, '') + dTxt);
+				else if (st.failed) say('#ff4d4f', `⚠️ 已补传 ${st.sent}/${st.total} 条，失败 ${st.failed} 条：时间戳未推进，处理后再接着点「评论同步」即可续传。${uTxt}${dTxt}`);
+				else say('#52c41a', `✅ 同步完成：补传 ${st.total} 条（主评论 ${st.tops} / 子评论 ${st.kids}）${uTxt}，同步时间戳已更新。${dTxt}`);
 			} catch (e) {
 				say('#ff4d4f', '❌ 同步失败：' + (e && e.message ? e.message : String(e)));
 			} finally {
@@ -1630,6 +1920,11 @@
 			injectFavActionButtons();
 		} catch (e) {
 			console.error('注入动作栏收藏按钮出错:', e);
+		}
+		try {
+			injectNavbarButton();
+		} catch (e) {
+			console.error('注入导航条入口按钮出错:', e);
 		}
 	}
 
