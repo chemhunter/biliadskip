@@ -1,18 +1,58 @@
 {
   "aiOptions": [
-		{value: 'aliyun', text: '阿里云', apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-		 model: "qwen3.8-max-0902, qwen3.8-27b, deepseek-v4-pro-0813, qwen3.8-2.4t-a95b, qwen3.8-max, deepseek-v4-flash-0731, qwen3.7-flash, glm-5.2, kimi-k2.7-code, deepseek-v4-pro, deepseek-v4-flash, kimi-k2.6, glm-5.1"
-		},
-		{ value: 'deepseek', text: 'DeepSeek', apiUrl: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-v4.1-flash, deepseek-v4-pro, deepseek-v4-flash' },
-		{value: 'kimi', text: 'Kimi', apiUrl: 'https://api.moonshot.cn/v1/chat/completions', model: 'kimi-k3, kimi-k2.7-code, kimi-k2.6' },
-		{value: 'glm', text: 'GLM', apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-5.3-flash, glm-5.2, glm-5.1, glm-5, glm-4.7, glm-4.7-flash, glm-4.6, glm-4.5, glm-4.5-air' },
-		{value: 'openrouter', text: 'OpenRouter-多模型自动路由', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', 
-		model: "qwen/qwen3.8-27b:free, nvidia/nemotron-3-ultra-550b-a55b:free, nvidia/nemotron-3-super-120b-a12b:free, z-ai/glm-5.2:free, inclusionai/ling-3.0-flash-vl:free, thinkingmachines/inkling-small:free, nvidia/nemotron-3.5-lightning:free, thinkingmachines/inkling:free, google/gemma-4-31b-it:free, google/gemma-4-26b-a4b-it:free"
-		},
-		{value: 'baidu', text: '百度千帆', apiUrl: 'https://qianfan.baidubce.com/v2/chat/completions', model: 'ernie-5.1, ernie-4.5-turbo-32k, ernie-x1.1, deepseek-v4-flash'},
-		{value: 'siliconflow', text: '硅基流动', apiUrl: 'https://api.siliconflow.cn/v1/chat/completions', model: 'deepseek-ai/DeepSeek-V4-Pro, deepseek-ai/DeepSeek-V4-Flash, MiniMaxAI/MiniMax-M2.5' },
-		{value: 'ChatGPT', text: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano' },
-		{value: 'cloudflare', text: 'CloudFlare（需自己动手配置, 下方key处输入“worker.account”段）', apiUrl: 'https://worker.account.workers.dev/',
-		 model: `@cf/qwen/qwen3.8-27b, @cf/moonshotai/kimi-k2.5, @cf/zai-org/glm-4.7-flash, @cf/nvidia/nemotron-3-120b-a12b, @cf/google/gemma-4-26b-a4b-it, @cf/qwen/qwen3-30b-a3b-fp8` }
-	]
+    {
+      "value": "aliyun",
+      "text": "阿里云",
+      "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+      "model": "qwen3.8-max-0902, qwen3.8-27b, deepseek-v4-pro-0813, qwen3.8-2.4t-a95b, qwen3.8-max, deepseek-v4-flash-0731, qwen3.7-flash, glm-5.2, kimi-k2.7-code, deepseek-v4-pro, deepseek-v4-flash, kimi-k2.6, glm-5.1"
+    },
+    {
+      "value": "deepseek",
+      "text": "DeepSeek",
+      "apiUrl": "https://api.deepseek.com/v1/chat/completions",
+      "model": "deepseek-v4.1-flash, deepseek-v4-pro, deepseek-v4-flash"
+    },
+    {
+      "value": "kimi",
+      "text": "Kimi",
+      "apiUrl": "https://api.moonshot.cn/v1/chat/completions",
+      "model": "kimi-k3, kimi-k2.7-code, kimi-k2.6"
+    },
+    {
+      "value": "glm",
+      "text": "GLM",
+      "apiUrl": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+      "model": "glm-5.3-flash, glm-5.2, glm-5.1, glm-5, glm-4.7, glm-4.7-flash, glm-4.6, glm-4.5, glm-4.5-air"
+    },
+    {
+      "value": "openrouter",
+      "text": "OpenRouter-多模型自动路由",
+      "apiUrl": "https://openrouter.ai/api/v1/chat/completions",
+      "model": "qwen/qwen3.8-27b:free, nvidia/nemotron-3-ultra-550b-a55b:free, nvidia/nemotron-3-super-120b-a12b:free, z-ai/glm-5.2:free, inclusionai/ling-3.0-flash-vl:free, thinkingmachines/inkling-small:free, nvidia/nemotron-3.5-lightning:free, thinkingmachines/inkling:free, google/gemma-4-31b-it:free, google/gemma-4-26b-a4b-it:free"
+    },
+    {
+      "value": "baidu",
+      "text": "百度千帆",
+      "apiUrl": "https://qianfan.baidubce.com/v2/chat/completions",
+      "model": "ernie-5.1, ernie-4.5-turbo-32k, ernie-x1.1, deepseek-v4-flash"
+    },
+    {
+      "value": "siliconflow",
+      "text": "硅基流动",
+      "apiUrl": "https://api.siliconflow.cn/v1/chat/completions",
+      "model": "deepseek-ai/DeepSeek-V4-Pro, deepseek-ai/DeepSeek-V4-Flash, MiniMaxAI/MiniMax-M2.5"
+    },
+    {
+      "value": "ChatGPT",
+      "text": "OpenAI",
+      "apiUrl": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano"
+    },
+    {
+      "value": "cloudflare",
+      "text": "CloudFlare（需自己动手配置, 下方key处输入“worker.account”段）",
+      "apiUrl": "https://worker.account.workers.dev/",
+      "model": "@cf/qwen/qwen3.8-27b, @cf/moonshotai/kimi-k2.5, @cf/zai-org/glm-4.7-flash, @cf/nvidia/nemotron-3-120b-a12b, @cf/google/gemma-4-26b-a4b-it, @cf/qwen/qwen3-30b-a3b-fp8"
+    }
+  ]
 }
