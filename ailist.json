@@ -4,13 +4,13 @@
       "value": "aliyun",
       "text": "阿里云",
       "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-      "model": "qwen3.8-max-0902, qwen3.8-27b, deepseek-v4-pro-0813, qwen3.8-2.4t-a95b, qwen3.8-max, deepseek-v4-flash-0731, qwen3.7-flash, glm-5.2, kimi-k2.7-code, deepseek-v4-pro, deepseek-v4-flash, kimi-k2.6, glm-5.1"
+      "model": "qwen3.8-max-0902, qwen3.8-27b, qwen3.8-max, qwen3.8-flash, glm-5.3, glm-5.2, glm-5.1, deepseek-v4-pro-0813, deepseek-v4-flash-0731, deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6"
     },
     {
       "value": "deepseek",
       "text": "DeepSeek",
       "apiUrl": "https://api.deepseek.com/v1/chat/completions",
-      "model": "deepseek-v4.1-flash, deepseek-v4-pro, deepseek-v4-flash"
+      "model": "deepseek-flash, deepseek-v4.1-flash, deepseek-v4-pro, deepseek-v4-flash"
     },
     {
       "value": "kimi",
