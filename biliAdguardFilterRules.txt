@@ -19,7 +19,9 @@ bilibili.com##.bg-bright-filter.z-gift-control-section.border-box.p-relative.gif
 bilibili.com##.p-relative.list-item
 bilibili.com##.f-left.h-100.shortcuts-ctnr
 bilibili.com##.download-client-trigger.download-entry
-bilibili.com##.right-entry--vip.right-entry__outside
+bilibili.com##.vip-entry.right-entry__item
+bilibili.com##.left-entry__item:has-text(会员购)
+bilibili.com##.left-entry__item:has-text(下载客户端)
 bilibili.com##.bili-dyn-version-control__reminding
 bilibili.com##.upload-creative-entry-list
 
