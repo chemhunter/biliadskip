@@ -4,7 +4,7 @@
       "value": "aliyun",
       "text": "阿里云",
       "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-      "model": "qwen3.8-max-0902, qwen3.8-27b, qwen3.8-max, qwen3.8-flash, glm-5.3, glm-5.2, glm-5.1, deepseek-v4-pro-0813, deepseek-v4-flash-0731, deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6"
+      "model": "deepseek-v4.1-flash-1017, deepseek-v4.1-flash, qwen3.8-max-0902, qwen3.8-27b, qwen3.8-max, qwen3.8-flash, glm-5.3, glm-5.2, glm-5.1, deepseek-v4-pro-0813, deepseek-v4-flash-0731, deepseek-v4-pro, deepseek-v4-flash, kimi-k3, kimi-k2.7-code, kimi-k2.6"
     },
     {
       "value": "deepseek",
@@ -16,7 +16,7 @@
       "value": "kimi",
       "text": "Kimi",
       "apiUrl": "https://api.moonshot.cn/v1/chat/completions",
-      "model": "kimi-k3, kimi-k2.7-code, kimi-k2.6"
+      "model": "kimi-k3.1, kimi-k3, kimi-k2.7-code, kimi-k2.6"
     },
     {
       "value": "glm",
@@ -28,7 +28,7 @@
       "value": "openrouter",
       "text": "OpenRouter-多模型自动路由",
       "apiUrl": "https://openrouter.ai/api/v1/chat/completions",
-      "model": "qwen/qwen3.8-27b:free, nvidia/nemotron-3-ultra-550b-a55b:free, nvidia/nemotron-3-super-120b-a12b:free, z-ai/glm-5.2:free, inclusionai/ling-3.0-flash-vl:free, thinkingmachines/inkling-small:free, nvidia/nemotron-3.5-lightning:free, thinkingmachines/inkling:free, google/gemma-4-31b-it:free, google/gemma-4-26b-a4b-it:free"
+      "model": "nvidia/nemotron-3-ultra-550b-a55b:free, nvidia/nemotron-3-super-120b-a12b:free, z-ai/glm-5.2:free, inclusionai/ling-3.0-flash-vl:free, thinkingmachines/inkling-small:free, nvidia/nemotron-3.5-lightning:free, thinkingmachines/inkling:free, google/gemma-4-31b-it:free, google/gemma-4-26b-a4b-it:free"
     },
     {
       "value": "baidu",
